@@ -526,50 +526,140 @@ export function CoinsPage() {
       {/* Referrals */}
       {activeTab === "referrals" && (
         <div className="space-y-6">
-          {referralInfo && (
-            <div className="glass-panel p-8 rounded-2xl border border-primary/20 text-center">
-              <div className="w-16 h-16 mx-auto rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center mb-4">
-                <Link className="w-8 h-8 text-primary" />
+          {/* Hero card */}
+          <div className="glass-panel rounded-2xl border border-primary/20 overflow-hidden">
+            <div className="bg-gradient-to-r from-primary/10 to-accent/10 px-8 py-6 border-b border-border text-center">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center mb-3">
+                <Gift className="w-7 h-7 text-primary" />
               </div>
-              <h3 className="text-2xl font-bold mb-2">Your Referral Code</h3>
-              <div className="flex items-center justify-center gap-3 my-4">
-                <code className="text-3xl font-mono font-bold text-primary tracking-widest">{referralInfo.referralCode}</code>
-                <button onClick={copyReferral} className="p-2 rounded-lg hover:bg-primary/10 text-primary transition-colors"><Copy className="w-5 h-5" /></button>
-              </div>
-              <p className="text-muted-foreground text-sm mb-4">Share your link and earn coins for every user who signs up!</p>
-              <div className="grid grid-cols-3 gap-4 mt-6">
-                <div className="glass-panel rounded-xl p-3 border border-border text-center">
-                  <p className="text-2xl font-bold text-primary">{referralInfo.totalReferrals || 0}</p>
-                  <p className="text-xs text-muted-foreground">Total Referrals</p>
-                </div>
-                <div className="glass-panel rounded-xl p-3 border border-border text-center">
-                  <p className="text-2xl font-bold text-yellow-400">{(referralInfo.coinsEarned || 0).toLocaleString()}</p>
-                  <p className="text-xs text-muted-foreground">Coins Earned</p>
-                </div>
-                <div className="glass-panel rounded-xl p-3 border border-border text-center">
-                  <p className="text-2xl font-bold text-green-400">{referralInfo.bonusPerReferral || 50}</p>
-                  <p className="text-xs text-muted-foreground">Bonus / Referral</p>
-                </div>
-              </div>
-              <Button className="mt-6 gap-2" onClick={copyReferral}>
-                <Copy className="w-4 h-4" /> Copy Referral Link
-              </Button>
+              <h3 className="text-xl font-bold mb-1">Refer Friends, Earn Coins</h3>
+              <p className="text-muted-foreground text-sm">You earn <span className="text-primary font-bold">{referralInfo?.bonusPerReferral ?? 10} coins</span> for every friend who signs up with your link.</p>
             </div>
-          )}
 
-          {referralLeaders.length > 0 && (
+            {referralInfo ? (
+              <div className="p-6 space-y-5">
+                {/* Stats row */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="glass-panel rounded-xl p-3 border border-border text-center">
+                    <p className="text-2xl font-bold text-primary">{referralInfo.totalReferrals || 0}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Referrals</p>
+                  </div>
+                  <div className="glass-panel rounded-xl p-3 border border-border text-center">
+                    <p className="text-2xl font-bold text-yellow-400">{(referralInfo.coinsEarned || 0).toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Coins Earned</p>
+                  </div>
+                  <div className="glass-panel rounded-xl p-3 border border-border text-center">
+                    <p className="text-2xl font-bold text-green-400">{referralInfo.bonusPerReferral ?? 10}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Per Referral</p>
+                  </div>
+                </div>
+
+                {/* Your code */}
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Your Referral Code</p>
+                  <div className="flex items-center gap-2 p-3 bg-input rounded-xl border border-border">
+                    <code className="flex-1 text-xl font-mono font-bold text-primary tracking-widest">{referralInfo.referralCode}</code>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(referralInfo.referralCode); toast({ title: "Code copied!" }); }}
+                      className="p-2 rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                      title="Copy code"
+                    ><Copy className="w-4 h-4" /></button>
+                  </div>
+                </div>
+
+                {/* Shareable link */}
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Referral Link</p>
+                  <div className="flex items-center gap-2 p-3 bg-input rounded-xl border border-border">
+                    <span className="flex-1 text-xs text-muted-foreground truncate">{window.location.origin}/register?ref={referralInfo.referralCode}</span>
+                    <button
+                      onClick={copyReferral}
+                      className="p-2 rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
+                      title="Copy link"
+                    ><Copy className="w-4 h-4" /></button>
+                  </div>
+                </div>
+
+                <Button className="w-full gap-2" onClick={copyReferral}>
+                  <Copy className="w-4 h-4" /> Copy Referral Link
+                </Button>
+              </div>
+            ) : (
+              <div className="p-10 text-center text-muted-foreground text-sm">Loading referral info…</div>
+            )}
+          </div>
+
+          {/* How it works */}
+          <div className="glass-panel rounded-2xl border border-border p-5">
+            <h4 className="font-bold text-sm mb-4 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-400" /> How It Works</h4>
+            <div className="space-y-3">
+              {[
+                { step: "1", title: "Share your link", desc: "Copy your unique referral link and share it with friends, on social media, or in communities." },
+                { step: "2", title: "Friend signs up", desc: "When someone registers using your referral link or code, the system automatically links them to you." },
+                { step: "3", title: "You earn coins", desc: `You instantly receive ${referralInfo?.bonusPerReferral ?? 10} coins added to your wallet — no waiting, no minimum threshold.` },
+              ].map(s => (
+                <div key={s.step} className="flex gap-3">
+                  <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0 mt-0.5">{s.step}</div>
+                  <div>
+                    <p className="text-sm font-semibold">{s.title}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{s.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Referral history */}
+          {referralInfo?.history?.length > 0 && (
             <div className="glass-panel rounded-2xl border border-border overflow-hidden">
               <div className="px-5 py-4 border-b border-border flex items-center gap-2">
                 <Users className="w-4 h-4 text-muted-foreground" />
+                <h3 className="font-bold text-sm">Your Referrals ({referralInfo.history.length})</h3>
+              </div>
+              <div className="divide-y divide-border/50">
+                {referralInfo.history.map((r: any, i: number) => (
+                  <div key={i} className="px-5 py-3 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-sm font-bold text-primary flex-shrink-0">
+                      {r.refereeUsername?.charAt(0)?.toUpperCase() || "?"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm">{r.refereeUsername || "Unknown"}</p>
+                      <p className="text-xs text-muted-foreground">{r.milestone === "signup" ? "Signed up" : r.milestone} · {new Date(r.createdAt).toLocaleDateString()}</p>
+                    </div>
+                    <span className="font-mono text-sm font-bold text-yellow-400">+{r.coinsAwarded ?? 0} coins</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {referralInfo && referralInfo.history?.length === 0 && (
+            <div className="glass-panel rounded-2xl p-12 text-center border border-dashed border-border">
+              <Users className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+              <h4 className="font-bold mb-1">No referrals yet</h4>
+              <p className="text-sm text-muted-foreground">Share your link above and start earning {referralInfo?.bonusPerReferral ?? 10} coins per sign-up.</p>
+            </div>
+          )}
+
+          {/* Leaderboard */}
+          {referralLeaders.length > 0 && (
+            <div className="glass-panel rounded-2xl border border-border overflow-hidden">
+              <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+                <Medal className="w-4 h-4 text-yellow-400" />
                 <h3 className="font-bold text-sm">Top Referrers</h3>
               </div>
               <div className="divide-y divide-border/50">
                 {referralLeaders.map((u: any, i: number) => (
-                  <div key={u.id || i} className="px-5 py-3 flex items-center gap-3">
+                  <div key={u.userId || i} className="px-5 py-3 flex items-center gap-3">
                     <span className="w-8 text-center font-bold text-muted-foreground">{rankMedal(i)}</span>
-                    <div className="w-8 h-8 rounded-full bg-secondary border border-border flex items-center justify-center text-xs font-bold">{u.username?.charAt(0)?.toUpperCase()}</div>
-                    <span className="flex-1 font-medium">{u.username}</span>
-                    <span className="font-mono text-primary font-bold">{u.referralCount || 0} referrals</span>
+                    <div className="w-8 h-8 rounded-full bg-secondary border border-border flex items-center justify-center text-xs font-bold">
+                      {u.username?.charAt(0)?.toUpperCase() || "?"}
+                    </div>
+                    <span className="flex-1 font-medium">{u.username || "Unknown"}</span>
+                    <div className="text-right">
+                      <p className="font-mono text-sm font-bold text-primary">{u.referralCount || 0} referrals</p>
+                      <p className="text-xs text-yellow-400">+{(u.coinsEarned || 0).toLocaleString()} coins</p>
+                    </div>
                   </div>
                 ))}
               </div>
