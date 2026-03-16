@@ -1289,7 +1289,7 @@ function PlatformTab() {
             <h3 className="font-bold flex items-center gap-2 text-green-400">
               <span className="text-lg">💳</span> PayHero (M-Pesa)
             </h3>
-            <Field label="PayHero Channel ID" k="payheroChannelId" placeholder="3763" />
+            <Field label="PayHero Channel ID" k="payheroChannelId" placeholder="3762" />
             <div className="bg-green-500/5 border border-green-500/20 rounded-xl p-3 text-xs text-green-300">
               <p>PayHero Auth key is stored as a server secret (PAYHERO_AUTH environment variable). Only update Channel ID here.</p>
             </div>
