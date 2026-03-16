@@ -409,10 +409,30 @@ router.delete("/announcements/:id", async (req, res): Promise<void> => {
 router.get("/platform", async (req, res): Promise<void> => {
   const settings = await db.select().from(platformSettingsTable);
   const result: Record<string, any> = {
-    maxProjectsFree: 2, maxProjectsPro: 20, enablePayments: true,
-    enableReferrals: true, enableAirdrops: true, enableBotMarket: true,
-    defaultCoinsOnSignup: 50, platformName: "BeraPanel", supportEmail: "",
-    maintenanceMode: false, registrationOpen: true, coinValueKsh: 1,
+    // General
+    platformName: "BeraPanel", supportEmail: "", logoUrl: "", faviconUrl: "",
+    maintenanceMode: false, maintenanceMessage: "We're upgrading the platform. Back soon!",
+    registrationOpen: true, requireEmailVerification: false,
+    // Limits
+    maxProjectsFree: 2, maxProjectsPro: 20, maxDomainsPerProject: 3,
+    maxTeamMembersPerProject: 5, maxLogLines: 1000,
+    // Economy
+    defaultCoinsOnSignup: 50, coinValueKsh: 1, referralBonus: 50,
+    enablePayments: true, enableReferrals: true, enableAirdrops: true, enableBotMarket: true,
+    // Integrations — Telegram
+    telegramBotToken: "", telegramBotUsername: "", telegramAdminChatId: "",
+    telegramNotifyDeploys: false, telegramNotifySignups: false, telegramNotifyPayments: false,
+    // Integrations — Discord
+    discordWebhookUrl: "", discordNotifyDeploys: false, discordNotifySignups: false,
+    // Integrations — Email / SMTP
+    smtpHost: "", smtpPort: 587, smtpUser: "", smtpPass: "", smtpFrom: "", smtpSsl: false,
+    // Integrations — PayHero
+    payheroChannelId: "3763",
+    // Integrations — GitHub
+    githubAppId: "", githubAppPrivateKey: "", githubWebhookSecret: "",
+    // Security
+    jwtExpiresIn: "7d", maxLoginAttempts: 5, sessionTimeoutMinutes: 60,
+    enableTwoFactor: false, allowedIpWhitelist: "",
   };
   for (const s of settings) {
     result[s.key] = s.value;
@@ -422,12 +442,13 @@ router.get("/platform", async (req, res): Promise<void> => {
 
 // PUT /admin/platform
 router.put("/platform", async (req, res): Promise<void> => {
-  const { settings } = req.body;
-  for (const [key, value] of Object.entries(settings || {})) {
+  const body = req.body;
+  const settingsToSave: Record<string, any> = body.settings || body;
+  for (const [key, value] of Object.entries(settingsToSave)) {
     await db.insert(platformSettingsTable).values({ key, value: value as any, updatedAt: new Date() })
       .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: value as any, updatedAt: new Date() } });
   }
-  res.json(settings);
+  res.json({ success: true });
 });
 
 // GET /admin/analytics
@@ -463,6 +484,50 @@ router.post("/coins/bulk", async (req, res): Promise<void> => {
     await awardCoins(u.id, amount, "gift", reason || "Bulk coin distribution");
   }
   res.json({ success: true, affectedUsers: users.length });
+});
+
+// POST /admin/coins/give — give coins to a specific user by username or userId
+router.post("/coins/give", requireAdmin, async (req, res): Promise<void> => {
+  const { username, userId, amount, reason } = req.body;
+  if (!amount || amount <= 0) { res.status(400).json({ error: "Invalid amount" }); return; }
+  let targetId = userId;
+  if (!targetId && username) {
+    const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.username, username));
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+    targetId = user.id;
+  }
+  if (!targetId) { res.status(400).json({ error: "Provide username or userId" }); return; }
+  await awardCoins(targetId, amount, "gift", reason || "Admin coin grant");
+  const [updated] = await db.select({ coins: usersTable.coins, username: usersTable.username }).from(usersTable).where(eq(usersTable.id, targetId));
+  res.json({ success: true, newBalance: updated?.coins, username: updated?.username });
+});
+
+// POST /admin/coins/give-self — superadmin gives coins to themselves
+router.post("/coins/give-self", requireAdmin, async (req, res): Promise<void> => {
+  const adminUser = (req as any).user;
+  const { amount, reason } = req.body;
+  if (!amount || amount <= 0) { res.status(400).json({ error: "Invalid amount" }); return; }
+  await awardCoins(adminUser.id, amount, "gift", reason || "Superadmin self-grant");
+  const [updated] = await db.select({ coins: usersTable.coins }).from(usersTable).where(eq(usersTable.id, adminUser.id));
+  res.json({ success: true, newBalance: updated?.coins });
+});
+
+// POST /admin/notifications/targeted — send notification to a group
+router.post("/notifications/targeted", requireAdmin, async (req, res): Promise<void> => {
+  const { title, message, type, target } = req.body;
+  let users: { id: string }[] = [];
+  if (target === "all") {
+    users = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.banned, false));
+  } else if (target === "premium") {
+    users = await db.select({ id: usersTable.id }).from(usersTable).where(and(eq(usersTable.banned, false), sql`${usersTable.coins} > 500`));
+  } else if (target === "new") {
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
+    users = await db.select({ id: usersTable.id }).from(usersTable).where(and(eq(usersTable.banned, false), gte(usersTable.createdAt, cutoff)));
+  }
+  for (const u of users) {
+    await createNotification(u.id, title, message, type || "info");
+  }
+  res.json({ success: true, sent: users.length });
 });
 
 // POST /admin/notifications
