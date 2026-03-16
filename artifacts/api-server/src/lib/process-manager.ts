@@ -7,16 +7,45 @@ import { db } from "@workspace/db";
 import { projectsTable, deployHistoryTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
-const PROJECTS_DIR = process.env.PROJECTS_DIR || path.join(process.cwd(), "bp_projects");
 const PORT_MIN = 3001;
 const PORT_MAX = 4000;
 
 // Base URL for live project URLs — always use production deployment URL
 const BASE_URL = "https://bruce-panel-1.replit.app";
 
-if (!fs.existsSync(PROJECTS_DIR)) {
-  fs.mkdirSync(PROJECTS_DIR, { recursive: true });
+// Resolve PROJECTS_DIR — try the configured/default path first, fall back to /tmp
+// if the filesystem is read-only (common in Replit autoscale production).
+function resolveProjectsDir(): string {
+  const candidates = [
+    process.env.PROJECTS_DIR,
+    path.join(process.cwd(), "artifacts/api-server/bp_projects"),
+    path.join(process.cwd(), "bp_projects"),
+    "/tmp/bp_projects",
+  ].filter(Boolean) as string[];
+
+  for (const dir of candidates) {
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      // Verify we can actually write to this directory
+      const testFile = path.join(dir, ".write_test");
+      fs.writeFileSync(testFile, "ok");
+      fs.unlinkSync(testFile);
+      console.log(`[pm] Projects directory: ${dir}`);
+      return dir;
+    } catch {
+      // Try next candidate
+    }
+  }
+  // Last resort — /tmp should always be writable
+  const fallback = "/tmp/bp_projects";
+  fs.mkdirSync(fallback, { recursive: true });
+  console.warn(`[pm] Warning: using fallback projects directory: ${fallback}`);
+  return fallback;
 }
+
+const PROJECTS_DIR = resolveProjectsDir();
 
 const processes = new Map<string, ChildProcess>();
 const logBuffers = new Map<string, string[]>();
@@ -180,7 +209,7 @@ export async function startProcess(project: { id: string; startCommand: string; 
     processes.delete(project.id);
 
     await db.update(projectsTable)
-      .set({ status: code === 0 ? "stopped" : "error", crashCount: (project as any).crashCount + 1 })
+      .set({ status: code === 0 ? "stopped" : "error", crashCount: ((project as any).crashCount ?? 0) + 1 })
       .where(eq(projectsTable.id, project.id));
 
     if (project.autoRestart && code !== 0) {

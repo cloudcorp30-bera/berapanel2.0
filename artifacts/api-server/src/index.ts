@@ -5,6 +5,16 @@ import { eq, or } from "drizzle-orm";
 import { startProcess, getProjectDir } from "./lib/process-manager.js";
 import fs from "fs";
 
+// Global safety net — log uncaught errors instead of crashing silently
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] Uncaught exception:", err.message);
+  console.error(err.stack);
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[FATAL] Unhandled rejection:", reason);
+});
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {
