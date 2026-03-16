@@ -93,36 +93,51 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  // ── ENV-based admin bypass (no database, no bcrypt) ─────────────────────────
+  // ── ENV-based admin bypass ──────────────────────────────────────────────────
   // Credentials: set ADMIN_USERNAME / ADMIN_PASSWORD env vars to override defaults
+  // Default: username=bera  password=bera2026
   const envUser = process.env.ADMIN_USERNAME ?? "bera";
   const envPass = process.env.ADMIN_PASSWORD ?? "bera2026";
+
   if (username === envUser && password === envPass) {
-    // Find or use the superadmin DB record so the rest of the app works normally
-    const [adminRecord] = await db
+    // Try to find an existing superadmin DB record
+    let [adminRecord] = await db
       .select()
       .from(usersTable)
       .where(eq(usersTable.role, "superadmin"))
       .limit(1);
 
-    if (adminRecord) {
-      await db.update(usersTable).set({
-        lastLogin: new Date(),
-        loginCount: (adminRecord.loginCount || 0) + 1,
-      }).where(eq(usersTable.id, adminRecord.id));
-
-      const token = signToken({ id: adminRecord.id, username: adminRecord.username, role: "superadmin" });
-      const refreshToken = uuidv4();
-      await db.insert(sessionsTable).values({
-        userId: adminRecord.id,
-        refreshToken,
-        ipAddress: req.ip,
-        userAgent: req.headers["user-agent"],
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      });
-      res.json({ token, refreshToken, user: toUserDto({ ...adminRecord, role: "superadmin" }) });
-      return;
+    // If no superadmin exists yet, auto-create one now
+    if (!adminRecord) {
+      const hashed = await bcrypt.hash(envPass, 10);
+      const refCode = uuidv4().replace(/-/g, "").slice(0, 12).toUpperCase();
+      [adminRecord] = await db.insert(usersTable).values({
+        username: envUser,
+        password: hashed,
+        role: "superadmin",
+        referralCode: refCode,
+        emailVerified: true,
+        coins: 999999,
+      }).returning();
     }
+
+    // Update last login
+    await db.update(usersTable).set({
+      lastLogin: new Date(),
+      loginCount: (adminRecord.loginCount || 0) + 1,
+    }).where(eq(usersTable.id, adminRecord.id));
+
+    const token = signToken({ id: adminRecord.id, username: adminRecord.username, role: "superadmin" });
+    const refreshToken = uuidv4();
+    await db.insert(sessionsTable).values({
+      userId: adminRecord.id,
+      refreshToken,
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+    res.json({ token, refreshToken, user: toUserDto({ ...adminRecord, role: "superadmin" }) });
+    return;
   }
   // ── End env-based admin bypass ────────────────────────────────────────────────
 
