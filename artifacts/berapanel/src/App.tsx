@@ -17,6 +17,8 @@ import { AirdropsPage } from "./pages/airdrops";
 import { SupportPage } from "./pages/support";
 import { ApiKeysPage } from "./pages/api-keys";
 import { AdminDashboard } from "./pages/admin";
+import { CommunityPage } from "./pages/community";
+import { TemplatesPage } from "./pages/templates";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -94,6 +96,12 @@ function ProtectedRoutes() {
         </Route>
         <Route path="/admin/:rest*">
           <ProtectedRoute component={AdminDashboard} />
+        </Route>
+        <Route path="/community">
+          <ProtectedRoute component={CommunityPage} />
+        </Route>
+        <Route path="/templates">
+          <ProtectedRoute component={TemplatesPage} />
         </Route>
         <Route component={NotFound} />
       </Switch>

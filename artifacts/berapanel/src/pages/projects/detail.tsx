@@ -15,7 +15,7 @@ import {
   Activity, Play, Square, RotateCw, TerminalSquare, FileCode, Settings, FileText, 
   Rocket, Trash2, Save, Globe, Moon, Sun, Copy, Link as LinkIcon, ExternalLink, Check,
   GitBranch, Clock, Shield, History, Wifi, WifiOff, AlertTriangle, CheckCircle, XCircle,
-  AlarmClock, Plus, X, Edit
+  AlarmClock, Plus, X, Edit, Webhook, Users, BadgeCheck, Info
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useQueryClient } from "@tanstack/react-query";
@@ -151,6 +151,9 @@ export function ProjectDetail() {
           { id: 'terminal', label: 'Terminal', icon: TerminalSquare },
           { id: 'env', label: 'Variables', icon: Settings },
           { id: 'crons', label: 'Crons', icon: AlarmClock },
+          { id: 'domains', label: 'Domains', icon: Globe },
+          { id: 'webhooks', label: 'Webhooks', icon: Webhook },
+          { id: 'team', label: 'Team', icon: Users },
           { id: 'editor', label: 'Code', icon: FileCode },
           { id: 'settings', label: 'Settings', icon: Shield },
         ].map(t => (
@@ -169,6 +172,9 @@ export function ProjectDetail() {
         {activeTab === 'terminal' && <TerminalTab projectId={project.id} />}
         {activeTab === 'env' && <EnvTab projectId={project.id} />}
         {activeTab === 'crons' && <CronsTab projectId={project.id} />}
+        {activeTab === 'domains' && <DomainsTab projectId={project.id} />}
+        {activeTab === 'webhooks' && <WebhooksTab projectId={project.id} />}
+        {activeTab === 'team' && <TeamTab projectId={project.id} />}
         {activeTab === 'editor' && <div className="glass-panel p-8 rounded-2xl flex items-center justify-center text-muted-foreground">File editor available via Terminal tab.</div>}
         {activeTab === 'settings' && <SettingsTab project={project} onRefresh={refetch} onDelete={() => navigate("/projects")} />}
       </div>
@@ -771,6 +777,357 @@ function DeployHistoryTab({ projectId }: { projectId: string }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── Domains Tab ──────────────────────────────────────────────────────────────
+function DomainsTab({ projectId }: { projectId: string }) {
+  const { toast } = useToast();
+  const [domains, setDomains] = useState<any[]>([]);
+  const [newDomain, setNewDomain] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [verifying, setVerifying] = useState<string | null>(null);
+
+  const load = () => {
+    setLoading(true);
+    apiFetch(`/projects/${projectId}/domains`).then(d => { setDomains(d.domains || []); setLoading(false); }).catch(() => setLoading(false));
+  };
+  useEffect(load, [projectId]);
+
+  const addDomain = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDomain.trim()) return;
+    setAdding(true);
+    try {
+      const d = await apiFetch(`/projects/${projectId}/domains`, { method: "POST", body: JSON.stringify({ domain: newDomain.trim() }) });
+      setDomains(prev => [...prev, d]);
+      setNewDomain("");
+      toast({ title: "Domain added", description: "Follow the DNS instructions to verify." });
+    } catch (err: any) { toast({ title: "Error", description: err.message, variant: "destructive" }); }
+    finally { setAdding(false); }
+  };
+
+  const verify = async (domainId: string) => {
+    setVerifying(domainId);
+    try {
+      await apiFetch(`/projects/${projectId}/domains/${domainId}/verify`, { method: "POST" });
+      toast({ title: "✅ Domain verified!", description: "SSL is being provisioned." });
+      load();
+    } catch (err: any) { toast({ title: "Verification failed", description: err.message, variant: "destructive" }); }
+    finally { setVerifying(null); }
+  };
+
+  const remove = async (domainId: string, domain: string) => {
+    if (!confirm(`Remove ${domain}?`)) return;
+    await apiFetch(`/projects/${projectId}/domains/${domainId}`, { method: "DELETE" });
+    setDomains(prev => prev.filter(d => d.id !== domainId));
+    toast({ title: "Domain removed" });
+  };
+
+  return (
+    <div className="space-y-5 overflow-y-auto pb-8">
+      <div>
+        <h3 className="font-bold">Custom Domains</h3>
+        <p className="text-sm text-muted-foreground">Add your own domain and serve your project from it with free SSL.</p>
+      </div>
+
+      <form onSubmit={addDomain} className="flex gap-2">
+        <input required value={newDomain} onChange={e => setNewDomain(e.target.value)} placeholder="yourdomain.com"
+          className="flex-1 px-3 py-2.5 bg-secondary border border-border rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40" />
+        <Button type="submit" isLoading={adding} className="gap-2 px-4"><Globe className="w-4 h-4" /> Add Domain</Button>
+      </form>
+
+      {loading ? (
+        <div className="space-y-3">{[...Array(2)].map((_, i) => <div key={i} className="h-20 bg-secondary rounded-xl animate-pulse" />)}</div>
+      ) : domains.length === 0 ? (
+        <div className="glass-panel rounded-2xl p-12 text-center border border-dashed border-border">
+          <Globe className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+          <h3 className="font-bold mb-1">No Custom Domains</h3>
+          <p className="text-muted-foreground text-sm">Add a domain above to get started.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {domains.map(d => (
+            <div key={d.id} className={`glass-panel rounded-xl border p-4 ${d.verified ? "border-green-500/30 bg-green-500/5" : "border-border"}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Globe className={`w-4 h-4 ${d.verified ? "text-green-400" : "text-muted-foreground"}`} />
+                  <code className="text-sm font-mono font-bold">{d.domain}</code>
+                  {d.verified ? (
+                    <span className="text-xs bg-green-500/10 border border-green-500/30 text-green-400 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" /> Verified · SSL Active
+                    </span>
+                  ) : (
+                    <span className="text-xs bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 px-2 py-0.5 rounded-full">Pending Verification</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {!d.verified && (
+                    <Button size="sm" variant="outline" isLoading={verifying === d.id} onClick={() => verify(d.id)} className="text-xs gap-1">
+                      <CheckCircle className="w-3 h-3" /> Verify
+                    </Button>
+                  )}
+                  <button onClick={() => remove(d.id, d.domain)} className="p-1.5 rounded-lg hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+              {!d.verified && (
+                <div className="bg-secondary/50 rounded-lg p-3 text-xs space-y-2 border border-border">
+                  <p className="font-semibold text-muted-foreground uppercase tracking-wide">DNS Configuration Required</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground w-12">CNAME</span>
+                    <code className="flex-1 bg-background px-2 py-1 rounded font-mono text-primary">{d.cnameTarget}</code>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground w-12">TXT</span>
+                    <code className="flex-1 bg-background px-2 py-1 rounded font-mono text-accent text-[10px] break-all">{d.txtRecord}</code>
+                  </div>
+                  <p className="text-muted-foreground">Point your CNAME to our server, add the TXT record, then click Verify.</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Webhooks Tab ─────────────────────────────────────────────────────────────
+const ALL_EVENTS = ["deploy.success", "deploy.failed", "project.started", "project.stopped", "project.error"];
+
+function WebhooksTab({ projectId }: { projectId: string }) {
+  const { toast } = useToast();
+  const [webhooks, setWebhooks] = useState<any[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ url: "", events: ALL_EVENTS, secret: "" });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    apiFetch(`/projects/${projectId}/webhooks`).then(d => { setWebhooks(d.webhooks || []); setLoading(false); }).catch(() => setLoading(false));
+  };
+  useEffect(load, [projectId]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.url.trim()) return;
+    setSaving(true);
+    try {
+      const hook = await apiFetch(`/projects/${projectId}/webhooks`, { method: "POST", body: JSON.stringify(form) });
+      setWebhooks(prev => [...prev, hook]);
+      setShowForm(false);
+      setForm({ url: "", events: ALL_EVENTS, secret: "" });
+      toast({ title: "Webhook created!" });
+    } catch (err: any) { toast({ title: "Error", description: err.message, variant: "destructive" }); }
+    finally { setSaving(false); }
+  };
+
+  const toggle = async (hook: any) => {
+    const updated = await apiFetch(`/projects/${projectId}/webhooks/${hook.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !hook.enabled }) });
+    setWebhooks(prev => prev.map(h => h.id === hook.id ? updated : h));
+  };
+
+  const remove = async (hookId: string) => {
+    if (!confirm("Delete this webhook?")) return;
+    await apiFetch(`/projects/${projectId}/webhooks/${hookId}`, { method: "DELETE" });
+    setWebhooks(prev => prev.filter(h => h.id !== hookId));
+    toast({ title: "Webhook deleted" });
+  };
+
+  return (
+    <div className="space-y-5 overflow-y-auto pb-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-bold">Outbound Webhooks</h3>
+          <p className="text-sm text-muted-foreground">Get notified via HTTP POST when events happen in your project.</p>
+        </div>
+        <Button onClick={() => setShowForm(true)} className="gap-2"><Plus className="w-4 h-4" /> Add Webhook</Button>
+      </div>
+
+      {showForm && (
+        <div className="glass-panel rounded-2xl border border-primary/20 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="font-bold">New Webhook</h4>
+            <button onClick={() => setShowForm(false)}><X className="w-4 h-4 text-muted-foreground" /></button>
+          </div>
+          <form onSubmit={save} className="space-y-4">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Payload URL</label>
+              <input required value={form.url} onChange={e => setForm(p => ({ ...p, url: e.target.value }))} placeholder="https://your-server.com/webhook"
+                className="w-full px-3 py-2 bg-secondary border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Secret (optional)</label>
+              <input value={form.secret} onChange={e => setForm(p => ({ ...p, secret: e.target.value }))} placeholder="Used to sign payloads"
+                className="w-full px-3 py-2 bg-secondary border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-2">Events to send</label>
+              <div className="flex flex-wrap gap-2">
+                {ALL_EVENTS.map(ev => (
+                  <label key={ev} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <input type="checkbox" checked={form.events.includes(ev)} onChange={e => setForm(p => ({ ...p, events: e.target.checked ? [...p.events, ev] : p.events.filter(x => x !== ev) }))} />
+                    <code className="bg-secondary px-1.5 py-0.5 rounded border border-border">{ev}</code>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <Button type="submit" isLoading={saving} className="flex-1">Save Webhook</Button>
+              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="space-y-3">{[...Array(2)].map((_, i) => <div key={i} className="h-16 bg-secondary rounded-xl animate-pulse" />)}</div>
+      ) : webhooks.length === 0 ? (
+        <div className="glass-panel rounded-2xl p-12 text-center border border-dashed border-border">
+          <Webhook className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+          <h3 className="font-bold mb-1">No Webhooks</h3>
+          <p className="text-muted-foreground text-sm">Add webhooks to get notified when your project changes state.</p>
+        </div>
+      ) : (
+        <div className="glass-panel rounded-2xl border border-border overflow-hidden">
+          <table className="w-full text-left text-sm">
+            <thead><tr className="border-b border-border bg-secondary/30">
+              <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">URL</th>
+              <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Events</th>
+              <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">Status</th>
+              <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase"></th>
+            </tr></thead>
+            <tbody className="divide-y divide-border/50">
+              {webhooks.map(hook => (
+                <tr key={hook.id} className="hover:bg-secondary/30 transition-colors">
+                  <td className="px-4 py-3 font-mono text-xs text-primary max-w-[200px] truncate">{hook.url}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{(hook.events || []).length} events</td>
+                  <td className="px-4 py-3">
+                    <button onClick={() => toggle(hook)} className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-colors ${hook.enabled ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-secondary border-border text-muted-foreground"}`}>
+                      {hook.enabled ? "Active" : "Disabled"}
+                    </button>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button onClick={() => remove(hook.id)} className="p-1.5 hover:bg-destructive/10 rounded-lg text-muted-foreground hover:text-destructive transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Team Tab ─────────────────────────────────────────────────────────────────
+function TeamTab({ projectId }: { projectId: string }) {
+  const { toast } = useToast();
+  const [members, setMembers] = useState<any[]>([]);
+  const [owner, setOwner] = useState<any>(null);
+  const [invite, setInvite] = useState({ username: "", role: "viewer" });
+  const [loading, setLoading] = useState(true);
+  const [inviting, setInviting] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    apiFetch(`/projects/${projectId}/team`).then(d => { setMembers(d.members || []); setOwner(d.owner); setLoading(false); }).catch(() => setLoading(false));
+  };
+  useEffect(load, [projectId]);
+
+  const addMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!invite.username.trim()) return;
+    setInviting(true);
+    try {
+      const member = await apiFetch(`/projects/${projectId}/team`, { method: "POST", body: JSON.stringify(invite) });
+      setMembers(prev => [...prev, member]);
+      setInvite({ username: "", role: "viewer" });
+      toast({ title: "Member added!" });
+    } catch (err: any) { toast({ title: "Error", description: err.message, variant: "destructive" }); }
+    finally { setInviting(false); }
+  };
+
+  const remove = async (memberId: string) => {
+    if (!confirm("Remove this member?")) return;
+    await apiFetch(`/projects/${projectId}/team/${memberId}`, { method: "DELETE" });
+    setMembers(prev => prev.filter(m => m.id !== memberId));
+    toast({ title: "Member removed" });
+  };
+
+  return (
+    <div className="space-y-5 overflow-y-auto pb-8">
+      <div>
+        <h3 className="font-bold">Team Collaboration</h3>
+        <p className="text-sm text-muted-foreground">Invite other developers to collaborate on this project.</p>
+      </div>
+
+      <form onSubmit={addMember} className="flex gap-2">
+        <input required value={invite.username} onChange={e => setInvite(p => ({ ...p, username: e.target.value }))} placeholder="Username to invite"
+          className="flex-1 px-3 py-2.5 bg-secondary border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+        <select value={invite.role} onChange={e => setInvite(p => ({ ...p, role: e.target.value }))}
+          className="px-3 py-2.5 bg-secondary border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
+          <option value="viewer">Viewer</option>
+          <option value="developer">Developer</option>
+          <option value="admin">Admin</option>
+        </select>
+        <Button type="submit" isLoading={inviting} className="gap-2 px-4"><Users className="w-4 h-4" /> Invite</Button>
+      </form>
+
+      {loading ? (
+        <div className="space-y-3">{[...Array(2)].map((_, i) => <div key={i} className="h-14 bg-secondary rounded-xl animate-pulse" />)}</div>
+      ) : (
+        <div className="glass-panel rounded-2xl border border-border overflow-hidden">
+          <div className="px-4 py-3 border-b border-border bg-secondary/30 flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase">
+            <Users className="w-3.5 h-3.5" /> {members.length + 1} member{members.length !== 0 ? "s" : ""}
+          </div>
+          <div className="divide-y divide-border/50">
+            <div className="px-4 py-3 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-xs font-bold text-white">O</div>
+              <div className="flex-1">
+                <p className="text-sm font-bold">Project Owner</p>
+              </div>
+              <span className="text-xs bg-primary/10 border border-primary/30 text-primary px-2 py-0.5 rounded-full font-bold">OWNER</span>
+            </div>
+            {members.map(m => (
+              <div key={m.id} className="px-4 py-3 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                  {m.username?.charAt(0).toUpperCase() || "?"}
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-bold">{m.username}</p>
+                  <p className="text-xs text-muted-foreground">Joined {new Date(m.joinedAt).toLocaleDateString()}</p>
+                </div>
+                {m.emailVerified && <BadgeCheck className="w-4 h-4 text-blue-400 flex-shrink-0" />}
+                <span className={`text-xs px-2 py-0.5 rounded-full border font-bold ${m.role === "admin" ? "bg-accent/10 border-accent/30 text-accent" : m.role === "developer" ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-secondary border-border text-muted-foreground"}`}>
+                  {m.role.toUpperCase()}
+                </span>
+                <button onClick={() => remove(m.id)} className="p-1.5 hover:bg-destructive/10 rounded-lg text-muted-foreground hover:text-destructive transition-colors flex-shrink-0">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="glass-panel rounded-xl border border-border p-4">
+        <div className="flex items-start gap-3">
+          <Info className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-muted-foreground space-y-1">
+            <p><strong>Viewer</strong> — Can view logs, metrics, and deployment history.</p>
+            <p><strong>Developer</strong> — Can deploy, restart, and manage environment variables.</p>
+            <p><strong>Admin</strong> — Full access except deleting the project and managing team.</p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

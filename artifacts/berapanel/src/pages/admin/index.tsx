@@ -1440,7 +1440,7 @@ function AdminProjectsTab() {
 }
 
 // ─── Main Admin Dashboard ─────────────────────────────────────────────────────
-type AdminTab = "overview" | "users" | "projects" | "bots" | "badge-requests" | "packages" | "airdrops" | "announcements" | "tickets" | "economy" | "analytics" | "audit" | "platform";
+type AdminTab = "overview" | "users" | "projects" | "bots" | "badge-requests" | "packages" | "airdrops" | "announcements" | "tickets" | "economy" | "analytics" | "audit" | "platform" | "feature-flags" | "health" | "referrals";
 
 export function AdminDashboard() {
   const [tab, setTab] = useState<AdminTab>("overview");
@@ -1478,6 +1478,9 @@ export function AdminDashboard() {
     { id: "analytics", label: "Analytics", icon: BarChart2 },
     { id: "audit", label: "Audit", icon: ClipboardList },
     { id: "platform", label: "Platform", icon: Settings },
+    { id: "feature-flags", label: "Features", icon: Zap },
+    { id: "health", label: "Health", icon: Cpu },
+    { id: "referrals", label: "Referrals", icon: Users },
   ];
 
   return (
@@ -1733,6 +1736,195 @@ export function AdminDashboard() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {tab === "feature-flags" && <FeatureFlagsTab />}
+      {tab === "health" && <SystemHealthTab />}
+      {tab === "referrals" && <ReferralConfigTab />}
+    </div>
+  );
+}
+
+// ─── Feature Flags Tab ────────────────────────────────────────────────────────
+function FeatureFlagsTab() {
+  const { toast } = useToast();
+  const [flags, setFlags] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = () => {
+    setLoading(true);
+    apiFetch("/admin/feature-flags").then(d => { setFlags(d.flags || []); setLoading(false); }).catch(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  const toggle = async (key: string, enabled: boolean) => {
+    await apiFetch(`/admin/feature-flags/${key}`, { method: "PUT", body: JSON.stringify({ enabled }) });
+    setFlags(prev => prev.map(f => f.key === key ? { ...f, enabled } : f));
+    toast({ title: `Feature ${enabled ? "enabled" : "disabled"}`, description: key });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="font-bold text-lg">Feature Flags</h3>
+        <p className="text-sm text-muted-foreground">Toggle platform features on/off without code changes.</p>
+      </div>
+      {loading ? (
+        <div className="space-y-3">{[...Array(6)].map((_, i) => <div key={i} className="h-16 bg-secondary rounded-xl animate-pulse" />)}</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {flags.map(flag => (
+            <div key={flag.key} className={`glass-panel rounded-xl border p-4 flex items-center gap-4 transition-all ${flag.enabled ? "border-border" : "border-border/40 opacity-70"}`}>
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${flag.enabled ? "bg-green-500/10 border border-green-500/30" : "bg-secondary border border-border"}`}>
+                <Zap className={`w-5 h-5 ${flag.enabled ? "text-green-400" : "text-muted-foreground"}`} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-sm">{flag.label}</p>
+                <p className="text-xs text-muted-foreground truncate">{flag.description}</p>
+              </div>
+              <button
+                onClick={() => toggle(flag.key, !flag.enabled)}
+                className={`relative w-12 h-6 rounded-full transition-colors flex-shrink-0 ${flag.enabled ? "bg-green-500" : "bg-secondary border border-border"}`}
+              >
+                <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-all ${flag.enabled ? "left-6" : "left-0.5"}`} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── System Health Tab ────────────────────────────────────────────────────────
+function SystemHealthTab() {
+  const [health, setHealth] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = () => apiFetch("/admin/health").then(setHealth).catch(() => {}).finally(() => setLoading(false));
+    load();
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (loading) return <div className="space-y-4">{[...Array(4)].map((_, i) => <div key={i} className="h-24 bg-secondary rounded-xl animate-pulse" />)}</div>;
+
+  const pct = (v: number, max: number) => Math.min(100, Math.round(v / max * 100));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-bold text-lg">System Health</h3>
+          <p className="text-sm text-muted-foreground">Live server metrics — refreshes every 5 seconds.</p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-green-400">
+          <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+          Live
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "CPU Load", value: `${health?.cpu?.load ?? 0}%`, sub: `${health?.cpu?.cores ?? 1} cores`, color: "text-red-400", bg: "bg-red-500/10", pct: parseFloat(health?.cpu?.load ?? 0) },
+          { label: "Memory", value: `${health?.memory?.used ?? 0} MB`, sub: `of ${health?.memory?.total ?? 0} MB`, color: "text-blue-400", bg: "bg-blue-500/10", pct: health?.memory?.percent ?? 0 },
+          { label: "Disk", value: `${health?.disk?.used ?? 0} GB`, sub: `of ${health?.disk?.total ?? 0} GB`, color: "text-yellow-400", bg: "bg-yellow-500/10", pct: health?.disk?.percent ?? 0 },
+          { label: "Uptime", value: `${Math.floor((health?.uptime ?? 0) / 3600)}h`, sub: `${Math.floor(((health?.uptime ?? 0) % 3600) / 60)}m`, color: "text-green-400", bg: "bg-green-500/10", pct: 100 },
+        ].map(m => (
+          <div key={m.label} className="glass-panel rounded-xl border border-border p-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">{m.label}</p>
+            <p className={`text-2xl font-mono font-bold ${m.color}`}>{m.value}</p>
+            <p className="text-xs text-muted-foreground mb-2">{m.sub}</p>
+            <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+              <div className={`h-full rounded-full transition-all ${m.pct > 80 ? "bg-red-400" : m.pct > 60 ? "bg-yellow-400" : "bg-green-400"}`} style={{ width: `${m.pct}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="glass-panel rounded-xl border border-border p-4">
+          <h4 className="font-bold text-sm mb-3">Platform Info</h4>
+          {[
+            { label: "OS", value: `${health?.platform?.os || "Unknown"} ${health?.platform?.version || ""}` },
+            { label: "Node.js", value: health?.nodeVersion || "Unknown" },
+            { label: "Total Users", value: health?.stats?.totalUsers?.toString() || "0" },
+            { label: "Running Projects", value: health?.stats?.runningProjects?.toString() || "0" },
+          ].map(({ label, value }) => (
+            <div key={label} className="flex justify-between py-2 border-b border-border/40 last:border-0 text-sm">
+              <span className="text-muted-foreground">{label}</span>
+              <span className="font-mono font-medium">{value}</span>
+            </div>
+          ))}
+        </div>
+        <div className="glass-panel rounded-xl border border-border p-4">
+          <h4 className="font-bold text-sm mb-3">Quick Actions</h4>
+          <div className="space-y-2">
+            {[
+              { label: "🛑 Stop All Projects", action: () => apiFetch("/admin/emergency/stop-all", { method: "POST" }), danger: true },
+              { label: "📢 Emergency Broadcast", action: () => { const msg = prompt("Broadcast message:"); if (msg) apiFetch("/admin/emergency/broadcast", { method: "POST", body: JSON.stringify({ title: "System Alert", message: msg, type: "warning" }) }); }, danger: false },
+            ].map(({ label, action, danger }) => (
+              <button key={label} onClick={action}
+                className={`w-full text-left text-sm px-3 py-2 rounded-lg border transition-colors ${danger ? "border-destructive/30 text-destructive hover:bg-destructive/10" : "border-border text-muted-foreground hover:bg-secondary hover:text-foreground"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Referral Config Tab ──────────────────────────────────────────────────────
+function ReferralConfigTab() {
+  const { toast } = useToast();
+  const [config, setConfig] = useState({ signupCoins: 50, firstDeployCoins: 100, firstPaymentCoins: 200 });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    apiFetch("/admin/referrals/config").then(d => { setConfig(d); setLoading(false); }).catch(() => setLoading(false));
+  }, []);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await apiFetch("/admin/referrals/config", { method: "PUT", body: JSON.stringify(config) });
+      toast({ title: "✅ Referral config saved!" });
+    } catch (err: any) { toast({ title: "Error", description: err.message, variant: "destructive" }); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-4 max-w-lg">
+      <div>
+        <h3 className="font-bold text-lg">Referral Config</h3>
+        <p className="text-sm text-muted-foreground">Control how many coins referrals earn at each milestone.</p>
+      </div>
+      {loading ? (
+        <div className="space-y-3">{[...Array(3)].map((_, i) => <div key={i} className="h-16 bg-secondary rounded-xl animate-pulse" />)}</div>
+      ) : (
+        <form onSubmit={save} className="glass-panel rounded-2xl border border-border p-6 space-y-4">
+          {[
+            { key: "signupCoins" as const, label: "Signup Coins", desc: "Coins given to referrer when someone they invited signs up" },
+            { key: "firstDeployCoins" as const, label: "First Deploy Coins", desc: "Coins given when referred user deploys their first project" },
+            { key: "firstPaymentCoins" as const, label: "First Payment Coins", desc: "Coins given when referred user makes their first coin purchase" },
+          ].map(({ key, label, desc }) => (
+            <div key={key}>
+              <label className="text-sm font-bold block mb-0.5">{label}</label>
+              <p className="text-xs text-muted-foreground mb-1.5">{desc}</p>
+              <div className="flex items-center gap-2">
+                <input type="number" min={0} value={config[key]} onChange={e => setConfig(p => ({ ...p, [key]: parseInt(e.target.value) || 0 }))}
+                  className="flex-1 px-3 py-2.5 bg-secondary border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                <span className="text-sm text-yellow-400 font-mono">coins</span>
+              </div>
+            </div>
+          ))}
+          <Button type="submit" isLoading={saving} className="w-full bg-gradient-to-r from-primary to-accent border-none text-white">Save Referral Config</Button>
+        </form>
       )}
     </div>
   );

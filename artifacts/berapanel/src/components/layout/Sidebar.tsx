@@ -14,17 +14,21 @@ import {
   LifeBuoy,
   Shield,
   Key,
-  X
+  X,
+  MessageSquare,
+  Layers
 } from "lucide-react";
 import { useGetMe } from "@workspace/api-client-react";
 
 const mainLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/projects", label: "Projects", icon: Server },
+  { href: "/templates", label: "Templates", icon: Layers },
   { href: "/marketplace", label: "Marketplace", icon: Store },
   { href: "/coins", label: "Economy", icon: Coins },
   { href: "/airdrops", label: "Airdrops", icon: Gift },
-  { href: "/api-keys", label: "API Keys", icon: Key },
+  { href: "/community", label: "Community", icon: MessageSquare },
+  { href: "/api-keys", label: "Developer API", icon: Key },
   { href: "/support", label: "Support", icon: LifeBuoy },
 ];
 
