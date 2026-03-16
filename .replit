@@ -31,6 +31,6 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
-PAYHERO_CHANNEL_ID = "3342"
+PAYHERO_CHANNEL_ID = "3763"
 PAYHERO_BASE = "https://backend.payhero.co.ke/api/v2"
 BASE_URL = "https://c0dab337-68c6-4fd0-a45e-0f73dc59a088-00-kejybjy8e1ic.janeway.replit.dev"
