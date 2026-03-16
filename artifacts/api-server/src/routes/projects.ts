@@ -299,6 +299,143 @@ router.put("/projects/:id/env", requireAuth, async (req, res): Promise<void> => 
   res.json({ success: true });
 });
 
+// GET /projects/:id/env/detect  — scan deployed code for env var references
+router.get("/projects/:id/env/detect", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const [project] = await db.select().from(projectsTable).where(
+    and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))
+  ).limit(1);
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+
+  const dir = getProjectDir(id);
+  if (!fs.existsSync(dir)) { res.json({ detected: [] }); return; }
+
+  interface DetectedVar { key: string; defaultValue: string; source: string; description: string; }
+  const detected = new Map<string, DetectedVar>();
+
+  const addVar = (key: string, defaultValue: string, source: string, description = "") => {
+    if (!key || key.length < 2 || key.length > 80 || !/^[A-Z0-9_]+$/i.test(key)) return;
+    if (!detected.has(key)) detected.set(key, { key, defaultValue, source, description });
+  };
+
+  // Walk directory, skip node_modules / .git / dist / build
+  const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "__pycache__", "venv", ".venv"]);
+  const TEXT_EXTS = new Set([".js", ".ts", ".jsx", ".tsx", ".py", ".go", ".rb", ".php", ".java",
+    ".env", ".env.example", ".env.sample", ".env.template", ".env.local",
+    ".cfg", ".ini", ".yaml", ".yml", ".toml", ".conf", ".config", ".json"]);
+
+  function walkDir(dirPath: string, depth = 0) {
+    if (depth > 6) return;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (SKIP_DIRS.has(entry.name)) continue;
+      const fullPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) { walkDir(fullPath, depth + 1); continue; }
+      const ext = path.extname(entry.name).toLowerCase();
+      const baseName = entry.name.toLowerCase();
+      if (!TEXT_EXTS.has(ext) && !baseName.startsWith(".env")) continue;
+      let content: string;
+      try {
+        const stat = fs.statSync(fullPath);
+        if (stat.size > 500_000) continue; // skip files > 500KB
+        content = fs.readFileSync(fullPath, "utf8");
+      } catch { continue; }
+
+      const relPath = path.relative(dir, fullPath);
+
+      // ── .env.example / .env.sample / .env.template ────────────────────────
+      if (/\.(env\.example|env\.sample|env\.template|env\.local|env)$/.test(baseName) || baseName === ".env.example") {
+        for (const line of content.split("\n")) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith("#")) {
+            // capture description from comments above
+            continue;
+          }
+          const match = trimmed.match(/^([A-Z0-9_]+)\s*=\s*(.*)$/i);
+          if (match) addVar(match[1], match[2].replace(/^["']|["']$/g, ""), relPath, "");
+        }
+        continue;
+      }
+
+      // ── Node.js: process.env.VAR_NAME ─────────────────────────────────────
+      if ([".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"].includes(ext)) {
+        const nodePatterns = [
+          /process\.env\.([A-Z0-9_]+)/gi,
+          /process\.env\[['"]([A-Z0-9_]+)['"]\]/gi,
+        ];
+        for (const pat of nodePatterns) {
+          let m;
+          pat.lastIndex = 0;
+          while ((m = pat.exec(content)) !== null) addVar(m[1], "", relPath);
+        }
+        // dotenv: require('dotenv').config() — no extra vars needed
+        // config object: { key: process.env.FOO || 'default' }
+        const defaultPat = /process\.env\.([A-Z0-9_]+)\s*\|\|\s*['"`]([^'"`]+)['"`]/gi;
+        let dm;
+        defaultPat.lastIndex = 0;
+        while ((dm = defaultPat.exec(content)) !== null) {
+          const existing = detected.get(dm[1]);
+          if (existing && !existing.defaultValue) existing.defaultValue = dm[2];
+          else addVar(dm[1], dm[2], relPath);
+        }
+      }
+
+      // ── Python: os.environ / os.getenv ────────────────────────────────────
+      if (ext === ".py") {
+        const pyPatterns = [
+          /os\.environ(?:\.get)?\(['"]([A-Z0-9_]+)['"]/gi,
+          /os\.getenv\(['"]([A-Z0-9_]+)['"](?:,\s*['"]([^'"]*)['"]\))?/gi,
+          /environ\['([A-Z0-9_]+)'\]/gi,
+        ];
+        for (const pat of pyPatterns) {
+          let m;
+          pat.lastIndex = 0;
+          while ((m = pat.exec(content)) !== null) addVar(m[1], m[2] || "", relPath);
+        }
+      }
+
+      // ── config.js / config.ts / settings.js / settings.py ─────────────────
+      if (/config\.(js|ts|json|yaml|yml|toml)|settings\.(js|ts|py)/.test(baseName)) {
+        // Already handled by extension above, but flag the source more clearly
+        detected.forEach(v => { if (v.source === relPath) v.description = "From config file"; });
+      }
+
+      // ── YAML / TOML: ${VAR} substitutions and env blocks ──────────────────
+      if ([".yaml", ".yml", ".toml"].includes(ext)) {
+        const substPat = /\$\{([A-Z0-9_]+)\}/gi;
+        let m;
+        substPat.lastIndex = 0;
+        while ((m = substPat.exec(content)) !== null) addVar(m[1], "", relPath);
+        // yaml env key: value pairs under environment: sections
+        const envBlockPat = /^\s{2,}([A-Z][A-Z0-9_]{2,}):\s*["']?([^"'\n]*)["']?$/gm;
+        envBlockPat.lastIndex = 0;
+        while ((m = envBlockPat.exec(content)) !== null) addVar(m[1], (m[2] || "").trim(), relPath);
+      }
+
+      // ── docker-compose.yml env: blocks ────────────────────────────────────
+      if (baseName === "docker-compose.yml" || baseName === "docker-compose.yaml") {
+        const dcPat = /^\s+([A-Z0-9_]+)(?:=([^\n]*))?$/gim;
+        let m;
+        dcPat.lastIndex = 0;
+        while ((m = dcPat.exec(content)) !== null) addVar(m[1], (m[2] || "").trim(), relPath);
+      }
+    }
+  }
+
+  walkDir(dir);
+
+  // Sort: .env.example entries first, then alphabetically
+  const sorted = Array.from(detected.values()).sort((a, b) => {
+    const aIsEnv = a.source.includes(".env");
+    const bIsEnv = b.source.includes(".env");
+    if (aIsEnv !== bIsEnv) return aIsEnv ? -1 : 1;
+    return a.key.localeCompare(b.key);
+  });
+
+  res.json({ detected: sorted, scannedDir: dir, total: sorted.length });
+});
+
 // GET /projects/:id/crons
 router.get("/projects/:id/crons", requireAuth, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
