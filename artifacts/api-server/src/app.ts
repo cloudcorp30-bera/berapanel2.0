@@ -83,7 +83,7 @@ app.use("/app/:projectId", async (req, res, next) => {
 const staticPath = path.resolve(process.cwd(), "artifacts/berapanel/dist/public");
 if (fs.existsSync(staticPath)) {
   app.use(express.static(staticPath));
-  app.get("*", (req, res) => {
+  app.get("/{*path}", (req, res) => {
     res.sendFile(path.join(staticPath, "index.html"));
   });
 } else {
