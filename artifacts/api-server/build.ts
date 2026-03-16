@@ -6,10 +6,13 @@ import { rm, readFile } from "fs/promises";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// server deps to bundle to reduce openat(2) syscalls
-// which helps cold start times without risking some
-// packages that are not bundle compatible
+// Packages that are bundled INTO the CJS output.
+// Anything NOT in this list (and not a workspace:* dep) becomes an external
+// require() call that must exist in node_modules at production runtime.
+// To eliminate all runtime dependency risk, bundle everything that is
+// pure-JS or known to be esbuild-compatible.
 const allowlist = [
+  // ---- already bundled ----
   "@google/generative-ai",
   "axios",
   "connect-pg-simple",
@@ -35,7 +38,32 @@ const allowlist = [
   "xlsx",
   "zod",
   "zod-validation-error",
+  // ---- newly bundled (were external → caused production crashes) ----
+  "adm-zip",
+  "bcryptjs",
+  "cookie-parser",
+  "helmet",
+  "http-proxy-middleware",
+  "morgan",
+  "node-cron",
+  "systeminformation",
 ];
+
+// Safety-net banner: registers uncaughtException / unhandledRejection handlers
+// at the very top of the bundle, BEFORE any module initialisation code runs,
+// so every startup crash is logged with a full stack trace instead of
+// producing a silent exit-1 with minified source printed to stderr.
+const errorBanner = `
+process.on('uncaughtException', function(err) {
+  process.stderr.write('[FATAL] Uncaught Exception: ' + err.message + '\\n');
+  if (err.stack) process.stderr.write(err.stack + '\\n');
+  process.exit(1);
+});
+process.on('unhandledRejection', function(reason) {
+  var msg = reason && reason.stack ? reason.stack : String(reason);
+  process.stderr.write('[FATAL] Unhandled Rejection: ' + msg + '\\n');
+});
+`.trim();
 
 async function buildAll() {
   const distDir = path.resolve(__dirname, "dist");
@@ -54,6 +82,8 @@ async function buildAll() {
       !(pkg.dependencies?.[dep]?.startsWith("workspace:")),
   );
 
+  console.log("External (not bundled):", externals);
+
   await esbuild({
     entryPoints: [path.resolve(__dirname, "src/index.ts")],
     platform: "node",
@@ -66,6 +96,8 @@ async function buildAll() {
     minify: true,
     external: externals,
     logLevel: "info",
+    // Inject the crash-logging banner at the very top of the bundle
+    banner: { js: errorBanner },
   });
 }
 
