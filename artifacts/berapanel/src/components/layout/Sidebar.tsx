@@ -11,14 +11,14 @@ import {
   Terminal,
   Activity,
   LogOut,
-  LifeBuoy
+  LifeBuoy,
+  Shield
 } from "lucide-react";
-import { useGetMe, useLogout } from "@workspace/api-client-react";
+import { useGetMe } from "@workspace/api-client-react";
 
 export function Sidebar() {
   const [location] = useLocation();
   const { data: user } = useGetMe();
-  const logout = useLogout();
 
   const mainLinks = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -38,13 +38,13 @@ export function Sidebar() {
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
 
   const handleLogout = () => {
-    logout.mutate(undefined, {
-      onSuccess: () => window.location.href = "/login"
-    });
+    localStorage.removeItem("token");
+    localStorage.removeItem("refreshToken");
+    window.location.href = "/login";
   };
 
   return (
-    <div className="w-64 border-r border-border bg-sidebar h-screen flex flex-col fixed left-0 top-0">
+    <div className="w-64 border-r border-border bg-sidebar h-screen flex flex-col fixed left-0 top-0 z-50">
       <div className="h-16 flex items-center px-6 border-b border-border">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20">
@@ -60,13 +60,13 @@ export function Sidebar() {
           {mainLinks.map((link) => {
             const active = location === link.href || (link.href !== '/dashboard' && location.startsWith(link.href));
             return (
-              <Link 
-                key={link.href} 
+              <Link
+                key={link.href}
                 href={link.href}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
-                  active 
-                    ? "bg-primary/10 text-primary border border-primary/20 shadow-sm" 
+                  active
+                    ? "bg-primary/10 text-primary border border-primary/20 shadow-sm"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground border border-transparent"
                 )}
               >
@@ -83,13 +83,13 @@ export function Sidebar() {
             {adminLinks.map((link) => {
               const active = location === link.href;
               return (
-                <Link 
-                  key={link.href} 
+                <Link
+                  key={link.href}
                   href={link.href}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
-                    active 
-                      ? "bg-accent/10 text-accent border border-accent/20 shadow-sm" 
+                    active
+                      ? "bg-accent/10 text-accent border border-accent/20 shadow-sm"
                       : "text-muted-foreground hover:bg-secondary hover:text-foreground border border-transparent"
                   )}
                 >
@@ -103,17 +103,20 @@ export function Sidebar() {
       </div>
 
       <div className="p-4 border-t border-border">
-        <div className="glass-panel p-4 rounded-xl flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center border border-border">
-            <span className="font-bold text-sm">{user?.username?.charAt(0).toUpperCase()}</span>
+        <div className="glass-panel p-4 rounded-xl flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/30 to-accent/30 flex items-center justify-center border border-border">
+            <span className="font-bold text-sm text-white">{user?.username?.charAt(0).toUpperCase()}</span>
           </div>
           <div className="flex-1 overflow-hidden">
-            <p className="text-sm font-bold truncate">{user?.username}</p>
-            <p className="text-xs text-muted-foreground truncate">{user?.coins || 0} Coins</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm font-bold truncate">{user?.username}</p>
+              {isAdmin && <Shield className="w-3 h-3 text-accent flex-shrink-0" />}
+            </div>
+            <p className="text-xs text-yellow-400 font-mono">{(user?.coins || 0).toLocaleString()} coins</p>
           </div>
         </div>
-        
-        <button 
+
+        <button
           onClick={handleLogout}
           className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
         >
