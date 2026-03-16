@@ -15,7 +15,8 @@ import {
   Activity, Play, Square, RotateCw, TerminalSquare, FileCode, Settings, FileText, 
   Rocket, Trash2, Save, Globe, Moon, Sun, Copy, Link as LinkIcon, ExternalLink, Check,
   GitBranch, Clock, Shield, History, Wifi, WifiOff, AlertTriangle, CheckCircle, XCircle,
-  AlarmClock, Plus, X, Edit, Webhook, Users, BadgeCheck, Info
+  AlarmClock, Plus, X, Edit, Webhook, Users, BadgeCheck, Info,
+  Sparkles, ScanSearch, ChevronDown, ChevronUp, FileSearch, Eye, EyeOff, KeyRound
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useQueryClient } from "@tanstack/react-query";
@@ -667,11 +668,21 @@ function TerminalTab({ projectId }: { projectId: string }) {
   );
 }
 
+interface DetectedVar { key: string; defaultValue: string; source: string; description: string; }
+
 function EnvTab({ projectId }: { projectId: string }) {
   const { data, isLoading, refetch } = useGetProjectEnv(projectId);
   const updateMut = useUpdateProjectEnv();
   const { toast } = useToast();
   const [envText, setEnvText] = useState("");
+
+  // Detection state
+  const [detecting, setDetecting] = useState(false);
+  const [detected, setDetected] = useState<DetectedVar[]>([]);
+  const [showDetect, setShowDetect] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [showValues, setShowValues] = useState<Set<string>>(new Set());
+  const [customValues, setCustomValues] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (data?.env) {
@@ -679,40 +690,231 @@ function EnvTab({ projectId }: { projectId: string }) {
     }
   }, [data]);
 
-  const handleSave = () => {
-    const newEnv: Record<string, string> = {};
+  const parseCurrentEnv = (): Record<string, string> => {
+    const env: Record<string, string> = {};
     envText.split('\n').forEach(l => {
-      const match = l.match(/^([^=]+)=(.*)$/);
-      if (match) newEnv[match[1].trim()] = match[2].trim();
+      const match = l.match(/^([^#\s][^=]*)=(.*)$/);
+      if (match) env[match[1].trim()] = match[2].trim();
     });
+    return env;
+  };
+
+  const handleSave = () => {
+    const newEnv = parseCurrentEnv();
     updateMut.mutate({ id: projectId, data: { env: newEnv } }, {
-      onSuccess: () => { toast({ title: "Environment Updated", description: "Container will restart to apply changes." }); refetch(); }
+      onSuccess: () => { toast({ title: "Environment Saved", description: "Changes will take effect on next restart." }); refetch(); }
     });
   };
 
-  if (isLoading) return null;
+  const handleDetect = async () => {
+    setDetecting(true);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`/api/brucepanel/projects/${projectId}/env/detect`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setDetected(data.detected || []);
+      setShowDetect(true);
+      // Pre-select all not yet set
+      const currentEnv = parseCurrentEnv();
+      const toSelect = new Set<string>(
+        (data.detected || []).filter((v: DetectedVar) => !currentEnv[v.key]).map((v: DetectedVar) => v.key)
+      );
+      setSelected(toSelect);
+      // Pre-fill custom values with defaults
+      const defaults: Record<string, string> = {};
+      (data.detected || []).forEach((v: DetectedVar) => { if (v.defaultValue) defaults[v.key] = v.defaultValue; });
+      setCustomValues(defaults);
+      if (data.detected?.length === 0) toast({ title: "No Variables Found", description: "No environment variable references were detected in the project code." });
+      else toast({ title: `Detected ${data.detected.length} Variable${data.detected.length !== 1 ? 's' : ''}`, description: "Select which ones to add to your environment." });
+    } catch {
+      toast({ title: "Detection Failed", description: "Could not scan the project files.", variant: "destructive" });
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  const handleAddSelected = () => {
+    const currentEnv = parseCurrentEnv();
+    selected.forEach(key => {
+      const val = customValues[key] ?? "";
+      currentEnv[key] = val;
+    });
+    const newText = Object.entries(currentEnv).map(([k, v]) => `${k}=${v}`).join('\n');
+    setEnvText(newText);
+    setShowDetect(false);
+    toast({ title: `${selected.size} variable${selected.size !== 1 ? 's' : ''} added`, description: "Review and click Save & Restart to apply." });
+  };
+
+  const toggleSelect = (key: string) => {
+    setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  };
+
+  const toggleShowValue = (key: string) => {
+    setShowValues(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  };
+
+  const currentEnvKeys = Object.keys(parseCurrentEnv());
+
+  const sourceColor = (src: string) => {
+    if (src.includes('.env')) return 'text-green-400 bg-green-500/10 border-green-500/20';
+    if (src.includes('config')) return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+    if (src.includes('.py')) return 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20';
+    return 'text-violet-400 bg-violet-500/10 border-violet-500/20';
+  };
+
+  if (isLoading) return <div className="flex items-center justify-center h-32 text-muted-foreground animate-pulse">Loading...</div>;
 
   return (
     <div className="h-full flex flex-col gap-4">
-      <div className="flex justify-between items-center">
+      {/* Header */}
+      <div className="flex justify-between items-start gap-3 flex-wrap">
         <div>
-          <p className="font-medium">Environment Variables</p>
-          <p className="text-xs text-muted-foreground mt-0.5">One per line: KEY=value — changes take effect on next restart</p>
+          <p className="font-semibold flex items-center gap-2"><KeyRound className="w-4 h-4 text-primary" /> Environment Variables</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            One per line: <code className="bg-secondary/60 px-1 rounded text-[11px]">KEY=value</code> — changes take effect on next restart
+          </p>
         </div>
-        <Button onClick={handleSave} isLoading={updateMut.isPending} className="gap-2 bg-primary hover:bg-primary/90 border-none text-white">
-          <Save className="w-4 h-4"/> Save & Restart
-        </Button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleDetect}
+            disabled={detecting}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-violet-500/30 bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 text-xs font-medium transition-all disabled:opacity-50"
+          >
+            {detecting ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+            {detecting ? 'Scanning...' : 'Auto-Detect Variables'}
+          </button>
+          <Button onClick={handleSave} isLoading={updateMut.isPending} className="gap-2 bg-primary hover:bg-primary/90 border-none text-white text-xs px-3 py-1.5 h-auto">
+            <Save className="w-3.5 h-3.5" /> Save & Restart
+          </Button>
+        </div>
       </div>
-      <div className="flex-1 border border-border rounded-xl overflow-hidden">
-        <Editor 
-          height="100%" 
-          defaultLanguage="ini" 
+
+      {/* Detection Results Panel */}
+      {showDetect && detected.length > 0 && (
+        <div className="glass-panel border border-violet-500/20 rounded-xl overflow-hidden">
+          {/* Panel Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-violet-500/5">
+            <div className="flex items-center gap-2">
+              <ScanSearch className="w-4 h-4 text-violet-400" />
+              <span className="text-sm font-medium">Detected Variables</span>
+              <span className="text-xs text-muted-foreground">({detected.length} found)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSelected(new Set(detected.map(d => d.key)))}
+                className="text-xs text-primary hover:text-accent transition-colors"
+              >Select All</button>
+              <span className="text-muted-foreground">·</span>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >None</button>
+              <span className="text-muted-foreground">·</span>
+              <button onClick={() => setShowDetect(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Variable List */}
+          <div className="max-h-64 overflow-y-auto divide-y divide-border/50">
+            {detected.map(v => {
+              const isAlreadySet = currentEnvKeys.includes(v.key);
+              const isSelected = selected.has(v.key);
+              const showVal = showValues.has(v.key);
+              return (
+                <div
+                  key={v.key}
+                  className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${isSelected ? 'bg-primary/5' : 'hover:bg-secondary/30'}`}
+                >
+                  {/* Checkbox */}
+                  <button
+                    onClick={() => toggleSelect(v.key)}
+                    className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-all ${isSelected ? 'bg-primary border-primary' : 'border-border hover:border-primary/60'}`}
+                  >
+                    {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
+                  </button>
+
+                  {/* Key name */}
+                  <code className="text-sm font-mono font-medium text-foreground min-w-0 flex-shrink-0 w-44 truncate">{v.key}</code>
+
+                  {/* Value input */}
+                  <div className="flex-1 relative">
+                    <input
+                      type={showVal ? "text" : "password"}
+                      placeholder={v.defaultValue || "Enter value..."}
+                      value={customValues[v.key] ?? (v.defaultValue || "")}
+                      onChange={e => setCustomValues(prev => ({ ...prev, [v.key]: e.target.value }))}
+                      className="w-full bg-secondary/40 border border-border rounded-lg px-3 py-1 text-xs font-mono focus:outline-none focus:border-primary/60 pr-8"
+                    />
+                    <button
+                      onClick={() => toggleShowValue(v.key)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showVal ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    </button>
+                  </div>
+
+                  {/* Source badge */}
+                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border flex-shrink-0 max-w-[120px] truncate ${sourceColor(v.source)}`}
+                    title={v.source}>
+                    {v.source.split('/').slice(-1)[0]}
+                  </span>
+
+                  {/* Status */}
+                  {isAlreadySet
+                    ? <span className="text-[10px] text-green-400 flex-shrink-0 flex items-center gap-0.5"><CheckCircle className="w-3 h-3" /> set</span>
+                    : <span className="text-[10px] text-amber-400 flex-shrink-0 flex items-center gap-0.5"><AlertTriangle className="w-3 h-3" /> missing</span>
+                  }
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Panel Footer */}
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-secondary/20">
+            <span className="text-xs text-muted-foreground">
+              {selected.size} of {detected.length} selected
+              {currentEnvKeys.length > 0 && ` · ${detected.filter(d => currentEnvKeys.includes(d.key)).length} already set`}
+            </span>
+            <button
+              onClick={handleAddSelected}
+              disabled={selected.size === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add {selected.size > 0 ? `${selected.size} ` : ''}to Editor
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Monaco Editor */}
+      <div className="flex-1 border border-border rounded-xl overflow-hidden min-h-0">
+        <Editor
+          height="100%"
+          defaultLanguage="ini"
           theme="vs-dark"
           value={envText}
           onChange={(val) => setEnvText(val || '')}
-          options={{ minimap: { enabled: false }, fontSize: 13, fontFamily: 'JetBrains Mono', lineNumbers: 'on' }}
+          options={{
+            minimap: { enabled: false },
+            fontSize: 13,
+            fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+            lineNumbers: 'on',
+            renderLineHighlight: 'line',
+            scrollBeyondLastLine: false,
+            wordWrap: 'on',
+          }}
         />
       </div>
+
+      {/* Footer hint */}
+      <p className="text-[11px] text-muted-foreground text-center">
+        <Sparkles className="w-3 h-3 inline mr-1 text-violet-400" />
+        Click <strong>Auto-Detect Variables</strong> to scan your app's code for <code className="bg-secondary/60 px-1 rounded">process.env.*</code>, <code className="bg-secondary/60 px-1 rounded">.env.example</code>, config files, and more.
+      </p>
     </div>
   );
 }
