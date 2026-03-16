@@ -19,6 +19,7 @@ import {
 import { eq, desc, and, ilike, sql, gte, count as countFn, or } from "drizzle-orm";
 import { requireAuth, requireAdmin } from "../lib/auth.js";
 import { awardCoins } from "../lib/coins.js";
+import { createNotification } from "../lib/notify.js";
 import { stopProcess, startProcess } from "../lib/process-manager.js";
 import si from "systeminformation";
 import bcrypt from "bcryptjs";
@@ -106,12 +107,37 @@ router.get("/users/:userId", async (req, res): Promise<void> => {
   res.json({ user: { ...user, password: undefined }, projects: projects.map(p => ({ ...p, envVars: {}, tags: p.tags || [], coinCostPerHour: Number(p.coinCostPerHour) })), transactions });
 });
 
-// POST /admin/users/:userId/coins
+// POST /admin/users/:userId/coins  (amount can be negative to deduct)
 router.post("/users/:userId/coins", async (req, res): Promise<void> => {
   const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
   const { amount, reason } = req.body;
-  await awardCoins(userId, amount, "gift", reason || "Admin adjustment");
-  res.json({ success: true });
+  if (!amount || amount === 0) { res.status(400).json({ error: "Amount cannot be zero" }); return; }
+  if (amount > 0) {
+    await awardCoins(userId, amount, "admin_gift", reason || "Admin added coins");
+  } else {
+    // Deduct: clamp to 0
+    const [user] = await db.select({ coins: usersTable.coins }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    const deduct = Math.min(Math.abs(amount), user?.coins || 0);
+    await db.update(usersTable).set({ coins: sql`coins - ${deduct}` }).where(eq(usersTable.id, userId));
+    await db.insert(transactionsTable).values({ userId, type: "admin_deduct", coins: -deduct, status: "completed", description: reason || "Admin deducted coins" });
+  }
+  const [updated] = await db.select({ coins: usersTable.coins }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  await createNotification(userId, amount > 0 ? "Coins Added by Admin" : "Coins Deducted by Admin",
+    amount > 0 ? `${amount} coins have been added to your wallet` : `${Math.abs(amount)} coins were deducted from your wallet`, amount > 0 ? "success" : "warning", "billing");
+  res.json({ success: true, newBalance: updated?.coins });
+});
+
+// POST /admin/users/:userId/verify  — toggle blue verified badge
+router.post("/users/:userId/verify", async (req, res): Promise<void> => {
+  const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+  const [user] = await db.select({ emailVerified: usersTable.emailVerified, username: usersTable.username }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  const newVal = !user.emailVerified;
+  await db.update(usersTable).set({ emailVerified: newVal }).where(eq(usersTable.id, userId));
+  if (newVal) {
+    await createNotification(userId, "✅ Verified Badge Granted", "You have been verified on BeraPanel. Your blue badge is now active.", "success", "system");
+  }
+  res.json({ success: true, verified: newVal });
 });
 
 // POST /admin/users/:userId/ban
