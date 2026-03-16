@@ -31,10 +31,9 @@ import path from "path";
 const router: IRouter = Router();
 
 function mapProject(p: typeof projectsTable.$inferSelect) {
-  const computedLiveUrl = p.liveUrl || getLiveUrl(p.id);
   return {
     ...p,
-    liveUrl: computedLiveUrl,
+    liveUrl: getLiveUrl(p.id),
     envVars: (p.envVars as Record<string, string>) || {},
     tags: p.tags || [],
     coinCostPerHour: Number(p.coinCostPerHour),

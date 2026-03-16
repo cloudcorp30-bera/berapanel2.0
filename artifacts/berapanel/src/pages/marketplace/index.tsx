@@ -1,11 +1,13 @@
 import { useListBots, useDeployBot, useGetBotCategories, useGetFeaturedBots, useGetBotReviews, useReviewBot } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Bot, Download, Star, Zap, Filter, Search, ChevronDown, X, Send } from "lucide-react";
+import { Bot, Download, Star, Zap, X, Send, ExternalLink, AlertCircle, Eye, EyeOff, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+
+const PAIRING_URL = "https://session.giftedtech.co.ke";
 
 function StarRating({ rating, max = 5 }: { rating: number; max?: number }) {
   return (
@@ -39,7 +41,6 @@ function BotReviews({ botId, onClose }: { botId: string; onClose: () => void }) 
           <h3 className="font-bold">Reviews ({reviews.length})</h3>
           <button onClick={onClose}><X className="w-5 h-5 text-muted-foreground" /></button>
         </div>
-
         <div className="flex-1 overflow-y-auto divide-y divide-border/50">
           {reviews.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground text-sm">No reviews yet. Be the first!</div>
@@ -56,7 +57,6 @@ function BotReviews({ botId, onClose }: { botId: string; onClose: () => void }) 
             </div>
           ))}
         </div>
-
         <form onSubmit={handleReview} className="p-5 border-t border-border space-y-3">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">Your Rating:</span>
@@ -80,7 +80,153 @@ function BotReviews({ botId, onClose }: { botId: string; onClose: () => void }) 
   );
 }
 
-function BotCard({ bot, onDeploy, onReview, deploying }: { bot: any; onDeploy: (b: any) => void; onReview: (b: any) => void; deploying: boolean }) {
+interface RequiredEnvVar { key: string; label: string; description?: string; required?: boolean; }
+
+function DeployDialog({ bot, onClose, onDeploy, deploying }: { bot: any; onClose: () => void; onDeploy: (name: string, envVars: Record<string, string>) => void; deploying: boolean }) {
+  const required: RequiredEnvVar[] = bot.requiredEnvVars || [];
+  const isWhatsApp = bot.category === "whatsapp";
+  const [projectName, setProjectName] = useState(`${bot.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Math.floor(Math.random() * 1000)}`);
+  const [envVars, setEnvVars] = useState<Record<string, string>>(
+    Object.fromEntries(required.map((v: RequiredEnvVar) => [v.key, ""]))
+  );
+  const [showValues, setShowValues] = useState<Set<string>>(new Set());
+  const { toast } = useToast();
+
+  const toggleShow = (key: string) => {
+    setShowValues(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const missingRequired = required.filter((v: RequiredEnvVar) => v.required !== false && !envVars[v.key]?.trim());
+    if (missingRequired.length > 0) {
+      toast({ title: "Required fields missing", description: `Please fill: ${missingRequired.map((v: RequiredEnvVar) => v.label).join(", ")}`, variant: "destructive" });
+      return;
+    }
+    if (!projectName.trim()) {
+      toast({ title: "Project name required", variant: "destructive" });
+      return;
+    }
+    onDeploy(projectName.trim(), envVars);
+  };
+
+  const sessionIdSet = envVars["SESSION_ID"]?.trim().length > 0;
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="glass-panel rounded-2xl w-full max-w-lg border border-border shadow-2xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="p-5 border-b border-border flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center text-xl border border-border flex-shrink-0">
+            {bot.icon || "🤖"}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-bold">{bot.name}</h3>
+            <p className="text-xs text-muted-foreground">{bot.coinCost > 0 ? `${bot.coinCost} coins` : "Free"}</p>
+          </div>
+          <button onClick={onClose}><X className="w-5 h-5 text-muted-foreground" /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-5">
+          {/* WhatsApp pairing instructions */}
+          {isWhatsApp && (
+            <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4 space-y-3">
+              <p className="text-sm font-bold text-green-300 flex items-center gap-2">💬 WhatsApp Session Required</p>
+              <p className="text-sm text-muted-foreground">You need a WhatsApp Session ID to connect this bot. Follow these steps:</p>
+              <ol className="text-sm text-muted-foreground space-y-1.5 list-none">
+                <li className="flex items-start gap-2">
+                  <span className="w-5 h-5 rounded-full bg-green-500/20 text-green-400 text-xs flex items-center justify-center flex-shrink-0 font-bold mt-0.5">1</span>
+                  Open the pairing site below
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="w-5 h-5 rounded-full bg-green-500/20 text-green-400 text-xs flex items-center justify-center flex-shrink-0 font-bold mt-0.5">2</span>
+                  Enter your WhatsApp number and get a pairing code
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="w-5 h-5 rounded-full bg-green-500/20 text-green-400 text-xs flex items-center justify-center flex-shrink-0 font-bold mt-0.5">3</span>
+                  On your phone: WhatsApp → Settings → Linked Devices → Link with phone number → Enter the code
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="w-5 h-5 rounded-full bg-green-500/20 text-green-400 text-xs flex items-center justify-center flex-shrink-0 font-bold mt-0.5">4</span>
+                  Copy the Session ID and paste it below
+                </li>
+              </ol>
+              <a href={PAIRING_URL} target="_blank" rel="noreferrer"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white text-sm font-semibold transition-colors w-full justify-center">
+                <ExternalLink className="w-4 h-4" /> Get Session ID from Pairing Site
+              </a>
+            </div>
+          )}
+
+          {/* Project Name */}
+          <div>
+            <label className="block text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wider">Project Name</label>
+            <input value={projectName} onChange={e => setProjectName(e.target.value)} required
+              placeholder="my-bot-123"
+              className="w-full px-3 py-2.5 bg-secondary border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+          </div>
+
+          {/* Required Env Vars */}
+          {required.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Configuration</p>
+              {required.map((v: RequiredEnvVar) => {
+                const isSessionId = v.key === "SESSION_ID";
+                const isSensitive = v.key.toLowerCase().includes("token") || v.key.toLowerCase().includes("key") || v.key.toLowerCase().includes("secret") || isSessionId;
+                const filled = !!envVars[v.key]?.trim();
+                return (
+                  <div key={v.key} className={`space-y-1 p-3 rounded-xl border ${isSessionId ? "border-green-500/30 bg-green-500/5" : "border-border bg-secondary/30"}`}>
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-semibold flex items-center gap-2">
+                        {isSessionId && <span>🔑</span>}
+                        {v.label}
+                        {v.required !== false && <span className="text-red-400">*</span>}
+                        {filled && <Check className="w-3.5 h-3.5 text-green-400" />}
+                      </label>
+                    </div>
+                    {v.description && <p className="text-xs text-muted-foreground">{v.description}</p>}
+                    <div className="relative">
+                      <input
+                        type={isSensitive && !showValues.has(v.key) ? "password" : "text"}
+                        value={envVars[v.key] || ""}
+                        onChange={e => setEnvVars(prev => ({ ...prev, [v.key]: e.target.value }))}
+                        placeholder={isSessionId ? "Paste your Session ID here..." : `Enter ${v.label}`}
+                        className={`w-full px-3 py-2.5 bg-secondary border rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40 pr-10 ${isSessionId && !filled ? "border-green-500/50" : "border-border"}`}
+                      />
+                      {isSensitive && (
+                        <button type="button" onClick={() => toggleShow(v.key)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                          {showValues.has(v.key) ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Cost warning */}
+          {bot.coinCost > 0 && (
+            <div className="flex items-start gap-2 text-sm text-yellow-400 bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-3">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span><strong>{bot.coinCost} coins</strong> will be deducted from your balance to deploy this bot.</span>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <Button type="button" onClick={onClose} className="flex-1 bg-secondary hover:bg-secondary/80 border border-border text-foreground">Cancel</Button>
+            <Button type="submit" isLoading={deploying} className="flex-1 gap-2 bg-primary hover:bg-primary/90">
+              <Zap className="w-4 h-4" /> Deploy Bot {bot.coinCost > 0 ? `(${bot.coinCost}c)` : ""}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function BotCard({ bot, onDeploy, onReview }: { bot: any; onDeploy: (b: any) => void; onReview: (b: any) => void; }) {
   return (
     <div className="glass-panel glass-panel-hover p-6 rounded-2xl flex flex-col group">
       <div className="flex items-start justify-between mb-4">
@@ -120,7 +266,7 @@ function BotCard({ bot, onDeploy, onReview, deploying }: { bot: any; onDeploy: (
       )}
 
       <div className="flex gap-2 mt-auto">
-        <Button className="flex-1 gap-2" onClick={() => onDeploy(bot)} isLoading={deploying}>
+        <Button className="flex-1 gap-2" onClick={() => onDeploy(bot)}>
           <Zap className="w-4 h-4" /> Deploy {bot.coinCost > 0 ? `(${bot.coinCost} coins)` : 'Free'}
         </Button>
         <button onClick={() => onReview(bot)} className="px-3 py-2 rounded-lg border border-border hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground">
@@ -141,16 +287,24 @@ export function Marketplace() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [reviewBot, setReviewBot] = useState<any>(null);
+  const [deployBot, setDeployBot] = useState<any>(null);
 
   const handleDeploy = (bot: any) => {
-    const name = `${bot.name.toLowerCase().replace(/\s+/g, '-')}-${Math.floor(Math.random() * 1000)}`;
-    deployMut.mutate({ id: bot.id, data: { projectName: name, envVars: {} } }, {
-      onSuccess: (project: any) => { toast({ title: "🚀 Bot Deployed!", description: "Check your projects tab." }); setLocation(`/projects/${project.id}`); },
+    setDeployBot(bot);
+  };
+
+  const executeDeploy = (name: string, envVars: Record<string, string>) => {
+    deployMut.mutate({ id: deployBot.id, data: { projectName: name, envVars } }, {
+      onSuccess: (project: any) => {
+        toast({ title: "🚀 Bot Deployed!", description: `${deployBot.name} is being set up.` });
+        setDeployBot(null);
+        setLocation(`/projects/${project.id}`);
+      },
       onError: (e: any) => toast({ title: "Deploy Failed", description: e.message, variant: "destructive" })
     });
   };
 
-  const filteredBots = (bots || []).filter((bot: any) => {
+  const filteredBots = (bots as any[] || []).filter((bot: any) => {
     const matchCat = selectedCategory === "all" || bot.category === selectedCategory;
     const matchSearch = !search || bot.name.toLowerCase().includes(search.toLowerCase()) || bot.description?.toLowerCase().includes(search.toLowerCase());
     return matchCat && matchSearch;
@@ -163,10 +317,18 @@ export function Marketplace() {
   return (
     <div className="space-y-8">
       {reviewBot && <BotReviews botId={reviewBot.id} onClose={() => setReviewBot(null)} />}
+      {deployBot && (
+        <DeployDialog
+          bot={deployBot}
+          onClose={() => setDeployBot(null)}
+          onDeploy={executeDeploy}
+          deploying={deployMut.isPending}
+        />
+      )}
 
       <div className="mb-2">
         <h1 className="text-3xl font-bold mb-2">Bot Marketplace</h1>
-        <p className="text-muted-foreground">Deploy pre-configured Discord, Telegram, and utility bots instantly.</p>
+        <p className="text-muted-foreground">Deploy pre-configured WhatsApp, Telegram, Discord, and utility bots instantly.</p>
       </div>
 
       {/* Featured Section */}
@@ -186,7 +348,7 @@ export function Marketplace() {
                   </div>
                   <p className="text-xs text-muted-foreground line-clamp-1 mb-2">{bot.description}</p>
                   <div className="flex items-center gap-3">
-                    <Button size="sm" onClick={() => handleDeploy(bot)} isLoading={deployMut.isPending} className="text-xs gap-1">
+                    <Button size="sm" onClick={() => handleDeploy(bot)} className="text-xs gap-1">
                       <Zap className="w-3 h-3" /> Deploy {bot.coinCost > 0 ? `(${bot.coinCost}c)` : 'Free'}
                     </Button>
                     {bot.rating > 0 && <div className="flex items-center gap-1"><StarRating rating={bot.rating} /><span className="text-xs text-muted-foreground">{(bot.rating || 0).toFixed(1)}</span></div>}
@@ -201,7 +363,7 @@ export function Marketplace() {
       {/* Search + Filter */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Bot className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search bots..."
@@ -215,11 +377,11 @@ export function Marketplace() {
             className={cn("px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap border transition-colors", selectedCategory === "all" ? "bg-primary/20 border-primary/30 text-primary" : "bg-secondary border-border text-muted-foreground hover:text-foreground")}>
             All
           </button>
-          {(categories as string[] || []).map((cat: string) => (
-            <button key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={cn("px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap border transition-colors capitalize", selectedCategory === cat ? "bg-primary/20 border-primary/30 text-primary" : "bg-secondary border-border text-muted-foreground hover:text-foreground")}>
-              {cat}
+          {((categories as any[]) || []).map((cat: any) => (
+            <button key={cat.category || cat}
+              onClick={() => setSelectedCategory(cat.category || cat)}
+              className={cn("px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap border transition-colors capitalize", selectedCategory === (cat.category || cat) ? "bg-primary/20 border-primary/30 text-primary" : "bg-secondary border-border text-muted-foreground hover:text-foreground")}>
+              {cat.category || cat}
             </button>
           ))}
         </div>
@@ -237,7 +399,7 @@ export function Marketplace() {
           <p className="text-sm text-muted-foreground mb-4">{filteredBots.length} bot{filteredBots.length !== 1 ? "s" : ""} {selectedCategory !== "all" ? `in "${selectedCategory}"` : "available"}</p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filteredBots.map((bot: any) => (
-              <BotCard key={bot.id} bot={bot} onDeploy={handleDeploy} onReview={setReviewBot} deploying={deployMut.isPending} />
+              <BotCard key={bot.id} bot={bot} onDeploy={handleDeploy} onReview={setReviewBot} />
             ))}
           </div>
         </div>

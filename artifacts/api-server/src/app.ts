@@ -6,6 +6,14 @@ import { createProxyMiddleware, responseInterceptor } from "http-proxy-middlewar
 import { db } from "@workspace/db";
 import { projectsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const PROD_URL = "https://bruce-panel-1.replit.app";
 
 const app: Express = express();
 
@@ -21,14 +29,14 @@ app.use("/app/:projectId", async (req, res, next) => {
   const { projectId } = req.params;
   try {
     const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, projectId)).limit(1);
-    if (!project || !project.port || project.status !== "running") {
-      res.status(503).send(`
-        <html><body style="background:#0a0a0f;color:#fff;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:16px">
-          <h1 style="color:#6366f1">BeraPanel</h1>
-          <p>Project <b>${project?.name || projectId}</b> is currently <b>${project?.status || "not found"}</b></p>
-          <p style="color:#888">Start or deploy your project to make it live.</p>
-        </body></html>
-      `);
+
+    if (!project) {
+      res.status(404).send(notFoundPage(projectId, "not found"));
+      return;
+    }
+
+    if (!project.port || project.status !== "running") {
+      res.status(503).send(notFoundPage(project.name || projectId, project.status || "stopped", project.id));
       return;
     }
 
@@ -43,21 +51,17 @@ app.use("/app/:projectId", async (req, res, next) => {
         proxyRes: responseInterceptor(async (responseBuffer, proxyRes) => {
           const contentType = proxyRes.headers["content-type"] || "";
 
-          // Only rewrite HTML responses
           if (!contentType.includes("text/html")) {
             return responseBuffer;
           }
 
           let html = responseBuffer.toString("utf8");
 
-          // Rewrite root-relative URLs (starting with /) but not protocol-relative (//)
-          // Covers: href="/path", src="/path", action="/path", fetch('/path'), axios.get('/path')
+          // Rewrite root-relative URLs for the project's sub-path
           html = html.replace(
             /(['"`])\/((?!\/)[^'"`\s>]*)/g,
             `$1${base}/$2`
           );
-
-          // Fix CSS url(/path) patterns
           html = html.replace(
             /url\(\/((?!\/)[^)]*)\)/g,
             `url(${base}/$1)`
@@ -67,7 +71,7 @@ app.use("/app/:projectId", async (req, res, next) => {
         }),
         error: (err: any, req: any, res: any) => {
           if (!res.headersSent) {
-            res.status(502).send("Project is starting up... Please wait.");
+            res.status(502).send(startingUpPage(projectId));
           }
         },
       },
@@ -78,15 +82,67 @@ app.use("/app/:projectId", async (req, res, next) => {
   }
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: `Route ${req.method} ${req.path} not found` });
-});
+// Serve frontend static build in production
+const staticPath = path.resolve(__dirname, "../../berapanel/dist/public");
+if (fs.existsSync(staticPath)) {
+  app.use(express.static(staticPath));
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(staticPath, "index.html"));
+  });
+} else {
+  // 404 handler for unknown API routes (dev mode)
+  app.use((req, res) => {
+    res.status(404).json({ error: `Route ${req.method} ${req.path} not found` });
+  });
+}
 
 // Error handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error(err);
   res.status(err.status || 500).json({ error: err.message || "Internal server error" });
 });
+
+function notFoundPage(nameOrId: string, status: string, projectId?: string) {
+  const panelUrl = `${PROD_URL}/projects${projectId ? `/${projectId}` : ""}`;
+  const statusColor = status === "stopped" ? "#f59e0b" : status === "sleeping" ? "#6366f1" : "#ef4444";
+  const statusText = status === "stopped" ? "⏹ Stopped" : status === "sleeping" ? "💤 Sleeping" : status === "idle" ? "⏸ Not Deployed" : `❌ ${status}`;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BeraPanel — ${nameOrId}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0a0a0f;color:#fff;font-family:'Inter',system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+.card{background:#111118;border:1px solid #2a2a3a;border-radius:20px;padding:48px 40px;max-width:480px;width:100%;text-align:center;box-shadow:0 25px 60px rgba(0,0,0,.6)}
+.logo{font-size:28px;font-weight:800;margin-bottom:24px;letter-spacing:-0.5px}.logo span{color:#6366f1}
+.badge{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:99px;font-size:13px;font-weight:600;margin-bottom:20px;border:1px solid}
+.name{font-size:20px;font-weight:700;margin-bottom:8px}.sub{color:#888;font-size:14px;line-height:1.5;margin-bottom:28px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 24px;border-radius:12px;font-size:14px;font-weight:600;text-decoration:none;transition:opacity .2s}
+.btn-primary{background:#6366f1;color:#fff}.btn-primary:hover{opacity:.85}
+.footer{margin-top:32px;font-size:12px;color:#555}
+</style></head>
+<body>
+<div class="card">
+  <div class="logo">Bera<span>Panel</span></div>
+  <div class="badge" style="color:${statusColor};border-color:${statusColor}33;background:${statusColor}11">${statusText}</div>
+  <div class="name">${nameOrId}</div>
+  <div class="sub">This project is currently <strong>${status}</strong>.<br>Deploy or start it from the panel to make it live.</div>
+  ${projectId ? `<a href="${panelUrl}" class="btn btn-primary">▶ Go to Project Panel</a>` : `<a href="${PROD_URL}" class="btn btn-primary">🏠 Open BeraPanel</a>`}
+  <div class="footer">Powered by BeraPanel 2.0</div>
+</div>
+</body></html>`;
+}
+
+function startingUpPage(projectId: string) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Starting Up…</title>
+<meta http-equiv="refresh" content="5">
+<style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0a0a0f;color:#fff;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh}
+.card{text-align:center;padding:40px}.spinner{width:40px;height:40px;border:3px solid #6366f155;border-top-color:#6366f1;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 24px}
+@keyframes spin{to{transform:rotate(360deg)}}.title{font-size:20px;font-weight:700;margin-bottom:8px}.sub{color:#888;font-size:14px}</style></head>
+<body><div class="card">
+  <div class="spinner"></div>
+  <div class="title">Project is starting up…</div>
+  <div class="sub">Please wait. This page will refresh automatically.</div>
+</div></body></html>`;
+}
 
 export default app;

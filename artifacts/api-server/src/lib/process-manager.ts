@@ -11,8 +11,8 @@ const PROJECTS_DIR = process.env.PROJECTS_DIR || path.join(process.cwd(), "bp_pr
 const PORT_MIN = 3001;
 const PORT_MAX = 4000;
 
-// Base URL for live project URLs - production deployment URL
-const BASE_URL = process.env.BASE_URL || "https://bruce-panel-1.replit.app";
+// Base URL for live project URLs — always use production deployment URL
+const BASE_URL = "https://bruce-panel-1.replit.app";
 
 if (!fs.existsSync(PROJECTS_DIR)) {
   fs.mkdirSync(PROJECTS_DIR, { recursive: true });
