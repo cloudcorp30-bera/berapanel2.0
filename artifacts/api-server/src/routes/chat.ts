@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { chatChannelsTable, chatMessagesTable, usersTable } from "@workspace/db/schema";
 import { eq, desc, asc } from "drizzle-orm";
-import { requireAuth } from "../lib/auth.js";
+import { requireAuth, verifyToken } from "../lib/auth.js";
 
 const router = Router();
 
@@ -77,16 +77,33 @@ router.post("/chat/channels/:slug/messages", requireAuth, async (req, res): Prom
 
   const fullMsg = { ...msg, ...user[0] };
   
-  // Broadcast to SSE clients
   const clients = sseClients.get(channel[0].id) || [];
-  clients.forEach(c => c.write(`data: ${JSON.stringify({ type: "message", payload: fullMsg })}\n\n`));
+  clients.forEach(c => {
+    try { c.write(`data: ${JSON.stringify({ type: "message", payload: fullMsg })}\n\n`); } catch {}
+  });
   
   res.json(fullMsg);
 });
 
 const sseClients = new Map<string, any[]>();
 
-router.get("/chat/channels/:slug/stream", requireAuth, async (req, res): Promise<void> => {
+// SSE stream — accepts token via Authorization header OR ?token= query param (for EventSource)
+router.get("/chat/channels/:slug/stream", async (req, res): Promise<void> => {
+  // Authenticate via header or query param (EventSource can't set headers)
+  let user = null;
+  const headerToken = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : null;
+  const queryToken = req.query.token as string | undefined;
+  const token = headerToken || queryToken;
+
+  if (token) {
+    user = verifyToken(token);
+  }
+
+  if (!user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
   const { slug } = req.params;
   const channel = await db.select().from(chatChannelsTable).where(eq(chatChannelsTable.slug, slug)).limit(1);
   if (!channel[0]) { res.status(404).json({ error: "Channel not found" }); return; }
@@ -94,15 +111,18 @@ router.get("/chat/channels/:slug/stream", requireAuth, async (req, res): Promise
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
   res.flushHeaders();
 
   const channelId = channel[0].id;
   if (!sseClients.has(channelId)) sseClients.set(channelId, []);
   sseClients.get(channelId)!.push(res);
 
-  res.write(`data: ${JSON.stringify({ type: "connected", channelId })}\n\n`);
+  res.write(`data: ${JSON.stringify({ type: "connected", channelId, username: user.username })}\n\n`);
 
-  const heartbeat = setInterval(() => res.write(": ping\n\n"), 30000);
+  const heartbeat = setInterval(() => {
+    try { res.write(": ping\n\n"); } catch { clearInterval(heartbeat); }
+  }, 30000);
 
   req.on("close", () => {
     clearInterval(heartbeat);
@@ -120,6 +140,16 @@ router.delete("/chat/messages/:id", requireAuth, async (req, res): Promise<void>
     res.status(403).json({ error: "Forbidden" }); return;
   }
   await db.delete(chatMessagesTable).where(eq(chatMessagesTable.id, id));
+  
+  // Notify SSE clients of deletion
+  const channel = await db.select().from(chatChannelsTable).where(eq(chatChannelsTable.id, msg.channelId!)).limit(1);
+  if (channel[0]) {
+    const clients = sseClients.get(channel[0].id) || [];
+    clients.forEach(c => {
+      try { c.write(`data: ${JSON.stringify({ type: "delete", payload: { id } })}\n\n`); } catch {}
+    });
+  }
+
   res.json({ ok: true });
 });
 

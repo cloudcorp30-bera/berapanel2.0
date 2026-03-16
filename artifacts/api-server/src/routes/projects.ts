@@ -20,6 +20,8 @@ import {
   removeSseClient,
   deployFromGit,
   getProjectDir,
+  getLiveUrl,
+  detectRuntime,
 } from "../lib/process-manager.js";
 import { awardCoins } from "../lib/coins.js";
 import { createNotification } from "../lib/notify.js";
@@ -29,8 +31,10 @@ import path from "path";
 const router: IRouter = Router();
 
 function mapProject(p: typeof projectsTable.$inferSelect) {
+  const computedLiveUrl = p.liveUrl || getLiveUrl(p.id);
   return {
     ...p,
+    liveUrl: computedLiveUrl,
     envVars: (p.envVars as Record<string, string>) || {},
     tags: p.tags || [],
     coinCostPerHour: Number(p.coinCostPerHour),
@@ -599,7 +603,7 @@ router.post("/projects/:id/wake", requireAuth, async (req, res): Promise<void> =
     and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))
   ).limit(1);
   if (!project) { res.status(404).json({ error: "Project not found" }); return; }
-  await startProcess(id, project.port || 3001);
+  await startProcess({ ...project, port: project.port || 3001, envVars: project.envVars as Record<string, string>, autoRestart: project.autoRestart });
   await db.update(projectsTable).set({ status: "running" }).where(eq(projectsTable.id, id));
   await createNotification(req.user!.id, "☀️ Project Woke Up", `${project.name} is back online!`, "success", "project");
   res.json({ success: true, status: "running" });
@@ -624,7 +628,7 @@ router.patch("/projects/:id/settings", requireAuth, async (req, res): Promise<vo
     and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))
   ).limit(1);
   if (!project) { res.status(404).json({ error: "Project not found" }); return; }
-  const allowed = ["name", "description", "autoRestart", "memoryLimitMb", "startCommand", "installCommand", "branch", "webhookSecret"];
+  const allowed = ["name", "description", "autoRestart", "memoryLimitMb", "startCommand", "installCommand", "buildCommand", "branch", "webhookSecret", "runtime"];
   const updates: Record<string, any> = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -674,14 +678,53 @@ router.get("/projects/stats", requireAuth, async (req, res): Promise<void> => {
   res.json(stats);
 });
 
+// GET /projects/:id/detect-commands — auto-detect build/start commands from deployed code
+router.get("/projects/:id/detect-commands", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const [project] = await db.select().from(projectsTable).where(
+    and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))
+  ).limit(1);
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+
+  const dir = getProjectDir(id);
+  if (!fs.existsSync(dir) || fs.readdirSync(dir).length === 0) {
+    res.json({ detected: false, message: "No project files found. Deploy from Git first." });
+    return;
+  }
+
+  const detected = detectRuntime(dir);
+
+  // Try to read package.json scripts
+  let allScripts: Record<string, string> = {};
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+    allScripts = pkg.scripts || {};
+  } catch {}
+
+  res.json({
+    detected: true,
+    runtime: detected.runtime,
+    installCommand: detected.installCommand,
+    startCommand: detected.startCommand,
+    buildCommand: detected.buildCommand,
+    availableScripts: allScripts,
+    files: fs.readdirSync(dir).slice(0, 20),
+  });
+});
+
 // GET /templates
 router.get("/templates", async (req, res): Promise<void> => {
   const templates = [
-    { id: "node-express", name: "Express API", description: "Simple Node.js Express REST API", runtime: "node", repoUrl: "", tags: ["node", "express", "api"] },
-    { id: "python-flask", name: "Flask App", description: "Python Flask web application", runtime: "python", repoUrl: "", tags: ["python", "flask"] },
-    { id: "telegram-bot", name: "Telegram Bot", description: "Node.js Telegram bot template", runtime: "node", repoUrl: "", tags: ["telegram", "bot"] },
-    { id: "discord-bot", name: "Discord Bot", description: "Discord.js bot template", runtime: "node", repoUrl: "", tags: ["discord", "bot"] },
-    { id: "next-app", name: "Next.js App", description: "Next.js React application", runtime: "node", repoUrl: "", tags: ["react", "next", "frontend"] },
+    { id: "node-express", name: "Express API", description: "Simple Node.js Express REST API", runtime: "node", installCommand: "npm install", startCommand: "node index.js", repoUrl: "", tags: ["node", "express", "api"], icon: "🟢" },
+    { id: "python-flask", name: "Flask App", description: "Python Flask web application", runtime: "python", installCommand: "pip install -r requirements.txt", startCommand: "python app.py", repoUrl: "", tags: ["python", "flask"], icon: "🐍" },
+    { id: "python-fastapi", name: "FastAPI", description: "Python FastAPI async REST API", runtime: "python", installCommand: "pip install -r requirements.txt", startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT", repoUrl: "", tags: ["python", "fastapi", "api"], icon: "⚡" },
+    { id: "telegram-bot", name: "Telegram Bot", description: "Node.js Telegram bot template", runtime: "node", installCommand: "npm install", startCommand: "node bot.js", repoUrl: "", tags: ["telegram", "bot"], icon: "✈️" },
+    { id: "discord-bot", name: "Discord Bot", description: "Discord.js bot template", runtime: "node", installCommand: "npm install", startCommand: "node index.js", repoUrl: "", tags: ["discord", "bot"], icon: "🎮" },
+    { id: "next-app", name: "Next.js App", description: "Next.js React application", runtime: "node", installCommand: "npm install", startCommand: "npm start", buildCommand: "npm run build", repoUrl: "", tags: ["react", "next", "frontend"], icon: "▲" },
+    { id: "static-site", name: "Static Site", description: "HTML/CSS/JS static website", runtime: "static", installCommand: "echo done", startCommand: "npx serve . -p $PORT", repoUrl: "", tags: ["html", "css", "static"], icon: "🌐" },
+    { id: "go-api", name: "Go API", description: "Go Gin REST API server", runtime: "go", installCommand: "go mod download", startCommand: "go run .", repoUrl: "", tags: ["go", "gin", "api"], icon: "🐹" },
+    { id: "whatsapp-bot", name: "WhatsApp Bot", description: "Node.js WhatsApp bot (Baileys)", runtime: "node", installCommand: "npm install", startCommand: "node index.js", repoUrl: "", tags: ["whatsapp", "bot"], icon: "💬" },
+    { id: "bun-app", name: "Bun App", description: "Fast Bun JavaScript runtime app", runtime: "bun", installCommand: "bun install", startCommand: "bun index.ts", repoUrl: "", tags: ["bun", "typescript"], icon: "🍞" },
   ];
   res.json(templates);
 });

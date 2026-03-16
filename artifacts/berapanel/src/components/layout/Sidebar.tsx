@@ -16,7 +16,8 @@ import {
   Key,
   X,
   MessageSquare,
-  Layers
+  Layers,
+  BookOpen
 } from "lucide-react";
 import { useGetMe } from "@workspace/api-client-react";
 
@@ -29,6 +30,7 @@ const mainLinks = [
   { href: "/airdrops", label: "Airdrops", icon: Gift },
   { href: "/community", label: "Community", icon: MessageSquare },
   { href: "/api-keys", label: "Developer API", icon: Key },
+  { href: "/api-docs", label: "API Docs", icon: BookOpen },
   { href: "/support", label: "Support", icon: LifeBuoy },
 ];
 

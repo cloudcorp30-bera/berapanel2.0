@@ -168,7 +168,7 @@ export function ProjectDetail() {
       {/* Content */}
       <div className="flex-1 overflow-hidden flex flex-col">
         {activeTab === 'overview' && <OverviewTab project={project} />}
-        {activeTab === 'logs' && <LogsTab projectId={project.id} />}
+        {activeTab === 'logs' && <LogsTab projectId={project.id} project={project} />}
         {activeTab === 'history' && <DeployHistoryTab projectId={project.id} />}
         {activeTab === 'terminal' && <TerminalTab projectId={project.id} />}
         {activeTab === 'env' && <EnvTab projectId={project.id} />}
@@ -461,11 +461,14 @@ function SettingsTab({ project, onRefresh, onDelete }: { project: any; onRefresh
     name: project.name || "",
     startCommand: project.startCommand || "",
     installCommand: project.installCommand || "",
+    buildCommand: project.buildCommand || "",
     branch: project.branch || "main",
+    runtime: project.runtime || "auto",
     memoryLimitMb: project.memoryLimitMb || 512,
     autoRestart: project.autoRestart ?? true,
   });
   const [copied, setCopied] = useState<string | null>(null);
+  const [detecting, setDetecting] = useState(false);
   const deleteMut = useDeleteProject();
 
   const baseUrl = window.location.origin.replace(window.location.pathname, "");
@@ -475,6 +478,26 @@ function SettingsTab({ project, onRefresh, onDelete }: { project: any; onRefresh
     navigator.clipboard.writeText(text);
     setCopied(key);
     setTimeout(() => setCopied(null), 2000);
+  };
+
+  const detectCommands = async () => {
+    setDetecting(true);
+    try {
+      const d = await apiFetch(`/projects/${project.id}/detect-commands`);
+      if (d.detected) {
+        setForm(f => ({
+          ...f,
+          runtime: d.runtime || f.runtime,
+          startCommand: d.startCommand || f.startCommand,
+          installCommand: d.installCommand || f.installCommand,
+          buildCommand: d.buildCommand || f.buildCommand,
+        }));
+        toast({ title: "🔍 Commands detected!", description: `Runtime: ${d.runtime}` });
+      } else {
+        toast({ title: "No files found", description: d.message, variant: "destructive" });
+      }
+    } catch (e: any) { toast({ title: "Detection failed", description: e.message, variant: "destructive" }); }
+    finally { setDetecting(false); }
   };
 
   const saveSettings = async () => {
@@ -509,18 +532,40 @@ function SettingsTab({ project, onRefresh, onDelete }: { project: any; onRefresh
     <div className="overflow-y-auto pb-10 space-y-6">
       {/* Project Settings */}
       <div className="glass-panel rounded-2xl border border-border p-6">
-        <h3 className="font-bold mb-4 flex items-center gap-2"><Settings className="w-4 h-4 text-primary" /> Project Settings</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold flex items-center gap-2"><Settings className="w-4 h-4 text-primary" /> Project Settings</h3>
+          <Button onClick={detectCommands} isLoading={detecting} className="text-xs px-3 py-1.5 h-auto bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" /> Auto-detect Commands
+          </Button>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Runtime selector */}
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Runtime</label>
+            <select value={form.runtime} onChange={e => setForm(f => ({ ...f, runtime: e.target.value }))}
+              className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
+              <option value="auto">🤖 Auto-detect</option>
+              <option value="node">🟢 Node.js</option>
+              <option value="python">🐍 Python</option>
+              <option value="go">🐹 Go</option>
+              <option value="php">🐘 PHP</option>
+              <option value="ruby">💎 Ruby</option>
+              <option value="bun">🍞 Bun</option>
+              <option value="deno">🦕 Deno</option>
+              <option value="static">🌐 Static Site</option>
+            </select>
+          </div>
           {[
             { label: "Project Name", key: "name", type: "text" },
             { label: "Branch", key: "branch", type: "text" },
-            { label: "Start Command", key: "startCommand", type: "text" },
-            { label: "Install Command", key: "installCommand", type: "text" },
+            { label: "Install Command", key: "installCommand", type: "text", placeholder: "npm install" },
+            { label: "Build Command (optional)", key: "buildCommand", type: "text", placeholder: "npm run build" },
+            { label: "Start Command", key: "startCommand", type: "text", placeholder: "node index.js" },
             { label: "Memory Limit (MB)", key: "memoryLimitMb", type: "number" },
-          ].map(({ label, key, type }) => (
+          ].map(({ label, key, type, placeholder }) => (
             <div key={key}>
               <label className="block text-xs font-medium text-muted-foreground mb-1">{label}</label>
-              <input type={type} value={(form as any)[key]}
+              <input type={type} value={(form as any)[key]} placeholder={placeholder}
                 onChange={e => setForm(f => ({ ...f, [key]: type === "number" ? Number(e.target.value) : e.target.value }))}
                 className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
             </div>
@@ -634,18 +679,42 @@ function SettingsTab({ project, onRefresh, onDelete }: { project: any; onRefresh
   );
 }
 
-function LogsTab({ projectId }: { projectId: string }) {
+function LogsTab({ projectId, project }: { projectId: string; project?: any }) {
   const { data, refetch } = useGetProjectLogs(projectId, { lines: 300 });
   useEffect(() => { const t = setInterval(() => refetch(), 3000); return () => clearInterval(t); }, [refetch]);
-  
+  const liveUrl = `https://bruce-panel-1.replit.app/app/${projectId}/`;
+  const isRunning = project?.status === "running";
+  const { toast } = useToast();
+
   return (
-    <div className="h-full bg-black rounded-xl border border-border overflow-hidden flex flex-col">
-      <div className="bg-secondary px-4 py-2 border-b border-border flex items-center justify-between">
-        <span className="font-mono text-xs text-muted-foreground">stdout / stderr — live tail</span>
-        <div className="w-2 h-2 rounded-full bg-success animate-pulse"></div>
+    <div className="h-full flex flex-col gap-3">
+      {/* Live URL banner — always visible */}
+      <div className={`rounded-xl border px-4 py-3 flex items-center gap-3 flex-shrink-0 ${isRunning ? "border-green-500/30 bg-green-500/5" : "border-border bg-secondary/40"}`}>
+        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isRunning ? "bg-green-400 animate-pulse" : "bg-gray-500"}`} />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">Project URL</p>
+          <code className={`text-sm font-mono truncate block ${isRunning ? "text-green-300" : "text-muted-foreground"}`}>{liveUrl}</code>
+        </div>
+        <div className="flex gap-1 flex-shrink-0">
+          <button onClick={() => { navigator.clipboard.writeText(liveUrl); toast({ title: "URL copied!" }); }}
+            className="p-1.5 rounded-lg hover:bg-green-500/20 text-green-400 transition-colors" title="Copy URL">
+            <Copy className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={() => window.open(liveUrl, '_blank')}
+            className="p-1.5 rounded-lg hover:bg-green-500/20 text-green-400 transition-colors" title="Open in new tab">
+            <ExternalLink className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-4 font-mono text-xs text-gray-300 whitespace-pre-wrap leading-relaxed">
-        {data?.logs || "No logs yet. Deploy your project to see output here."}
+
+      <div className="flex-1 bg-black rounded-xl border border-border overflow-hidden flex flex-col">
+        <div className="bg-secondary px-4 py-2 border-b border-border flex items-center justify-between flex-shrink-0">
+          <span className="font-mono text-xs text-muted-foreground">stdout / stderr — live tail</span>
+          <div className={`w-2 h-2 rounded-full ${isRunning ? "bg-success animate-pulse" : "bg-gray-600"}`}></div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 font-mono text-xs text-gray-300 whitespace-pre-wrap leading-relaxed">
+          {data?.logs || "No logs yet. Deploy your project to see output here."}
+        </div>
       </div>
     </div>
   );

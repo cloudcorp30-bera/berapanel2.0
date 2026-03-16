@@ -19,6 +19,7 @@ import { ApiKeysPage } from "./pages/api-keys";
 import { AdminDashboard } from "./pages/admin";
 import { CommunityPage } from "./pages/community";
 import { TemplatesPage } from "./pages/templates";
+import { ApiDocsPage } from "./pages/api-docs";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -102,6 +103,9 @@ function ProtectedRoutes() {
         </Route>
         <Route path="/templates">
           <ProtectedRoute component={TemplatesPage} />
+        </Route>
+        <Route path="/api-docs">
+          <ProtectedRoute component={ApiDocsPage} />
         </Route>
         <Route component={NotFound} />
       </Switch>
