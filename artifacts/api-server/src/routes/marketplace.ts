@@ -9,8 +9,9 @@ import {
 import { eq, desc, sql } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
 import { spendCoins } from "../lib/coins.js";
-import { getProjectDir } from "../lib/process-manager.js";
+import { getProjectDir, getLiveUrl } from "../lib/process-manager.js";
 import fs from "fs";
+import path from "path";
 
 const router: IRouter = Router();
 
@@ -71,6 +72,15 @@ router.post("/bots/:id/deploy", requireAuth, async (req, res): Promise<void> => 
     return;
   }
 
+  // Validate required env vars on the server
+  const requiredVars = (bot.requiredEnvVars as Array<{key:string;label:string;required?:boolean}>) || [];
+  const userEnv = (envVars as Record<string, string>) || {};
+  const missing = requiredVars.filter(v => v.required !== false && !userEnv[v.key]?.trim());
+  if (missing.length > 0) {
+    res.status(400).json({ error: `Missing required fields: ${missing.map(v => v.label).join(", ")}` });
+    return;
+  }
+
   // Deduct coin cost if required
   if ((bot.coinCost || 0) > 0) {
     const ok = await spendCoins(req.user!.id, bot.coinCost!, "spend", `Deploy bot: ${bot.name}`);
@@ -89,17 +99,57 @@ router.post("/bots/:id/deploy", requireAuth, async (req, res): Promise<void> => 
     startCommand: bot.startCommand || "node index.js",
     installCommand: bot.installCommand,
     runtime: bot.runtime,
-    envVars: envVars || {},
+    envVars: userEnv,
     deploySource: "bot_template",
   }).returning();
 
-  // Create project dir
-  fs.mkdirSync(getProjectDir(project.id), { recursive: true });
+  const projectDir = getProjectDir(project.id);
+  fs.mkdirSync(projectDir, { recursive: true });
+
+  // Check for a local zip file for this bot (slugified name)
+  const botSlug = bot.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const zipPath = path.join(process.cwd(), "bot_zips", `${botSlug}.zip`);
+
+  if (fs.existsSync(zipPath)) {
+    // Extract zip directly to project dir (auto-deploy from local zip)
+    try {
+      const { default: AdmZip } = await import("adm-zip");
+      const zip = new AdmZip(zipPath);
+      const entries = zip.getEntries();
+
+      // Find the root folder prefix (e.g. "atassa-main/")
+      const prefix = entries.find(e => e.isDirectory)?.entryName || "";
+
+      for (const entry of entries) {
+        if (entry.isDirectory) continue;
+        const relativePath = prefix ? entry.entryName.replace(prefix, "") : entry.entryName;
+        if (!relativePath) continue;
+        const destPath = path.join(projectDir, relativePath);
+        fs.mkdirSync(path.dirname(destPath), { recursive: true });
+        fs.writeFileSync(destPath, entry.getData());
+      }
+
+      // Write the .env file with user-provided vars
+      const envContent = Object.entries(userEnv).map(([k, v]) => `${k}=${v}`).join("\n");
+      fs.writeFileSync(path.join(projectDir, ".env"), envContent);
+
+      // Mark as "cloned" so deploy just runs install + start
+      await db.update(projectsTable).set({ status: "idle" }).where(eq(projectsTable.id, project.id));
+    } catch (err: any) {
+      console.error("Zip extraction failed:", err.message);
+    }
+  }
 
   // Increment deploy count
   await db.update(botTemplatesTable).set({ deployCount: (bot.deployCount || 0) + 1 }).where(eq(botTemplatesTable.id, id));
 
-  res.status(201).json({ ...project, envVars: (project.envVars as any) || {}, tags: project.tags || [], coinCostPerHour: Number(project.coinCostPerHour) });
+  res.status(201).json({
+    ...project,
+    liveUrl: getLiveUrl(project.id),
+    envVars: userEnv,
+    tags: project.tags || [],
+    coinCostPerHour: Number(project.coinCostPerHour),
+  });
 });
 
 // POST /bots/:id/review
