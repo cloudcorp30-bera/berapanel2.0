@@ -8,10 +8,13 @@ import { AppLayout } from "./components/layout/AppLayout";
 import { Login } from "./pages/auth/login";
 import { Register } from "./pages/auth/register";
 import { Dashboard } from "./pages/dashboard";
+import { ProjectsList } from "./pages/projects/index";
 import { NewProject } from "./pages/projects/new";
 import { ProjectDetail } from "./pages/projects/detail";
 import { Marketplace } from "./pages/marketplace";
 import { CoinsPage } from "./pages/coins";
+import { AirdropsPage } from "./pages/airdrops";
+import { SupportPage } from "./pages/support";
 import { AdminDashboard } from "./pages/admin";
 import NotFound from "@/pages/not-found";
 
@@ -67,13 +70,25 @@ function ProtectedRoutes() {
         <Route path="/projects/:id">
           <ProtectedRoute component={ProjectDetail} />
         </Route>
+        <Route path="/projects">
+          <ProtectedRoute component={ProjectsList} />
+        </Route>
         <Route path="/marketplace">
           <ProtectedRoute component={Marketplace} />
         </Route>
         <Route path="/coins">
           <ProtectedRoute component={CoinsPage} />
         </Route>
+        <Route path="/airdrops">
+          <ProtectedRoute component={AirdropsPage} />
+        </Route>
+        <Route path="/support">
+          <ProtectedRoute component={SupportPage} />
+        </Route>
         <Route path="/admin">
+          <ProtectedRoute component={AdminDashboard} />
+        </Route>
+        <Route path="/admin/:rest*">
           <ProtectedRoute component={AdminDashboard} />
         </Route>
         <Route component={NotFound} />
