@@ -493,6 +493,47 @@ router.patch("/projects/:id/settings", requireAuth, async (req, res): Promise<vo
   res.json(mapProject(updated));
 });
 
+// GET /projects/:id/health  — ping the live URL and return latency + status
+router.get("/projects/:id/health", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const [project] = await db.select().from(projectsTable).where(
+    and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))
+  ).limit(1);
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+  if (!project.liveUrl || project.status !== "running") {
+    res.json({ healthy: false, status: project.status, latencyMs: null, checkedAt: new Date().toISOString() });
+    return;
+  }
+  const url = project.liveUrl.startsWith("http") ? project.liveUrl : `https://${project.liveUrl}`;
+  const start = Date.now();
+  try {
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 8000);
+    const r = await fetch(url, { method: "GET", signal: ctrl.signal, redirect: "follow" });
+    clearTimeout(timeout);
+    const latencyMs = Date.now() - start;
+    res.json({ healthy: r.ok || r.status < 500, statusCode: r.status, latencyMs, checkedAt: new Date().toISOString() });
+  } catch (err: any) {
+    res.json({ healthy: false, statusCode: null, latencyMs: null, error: err.message, checkedAt: new Date().toISOString() });
+  }
+});
+
+// GET /projects/stats  — aggregate stats for the dashboard
+router.get("/projects/stats", requireAuth, async (req, res): Promise<void> => {
+  const projects = await db.select().from(projectsTable).where(eq(projectsTable.userId, req.user!.id));
+  const stats = {
+    total: projects.length,
+    running: projects.filter(p => p.status === "running").length,
+    sleeping: projects.filter(p => p.status === "sleeping").length,
+    building: projects.filter(p => p.status === "building").length,
+    error: projects.filter(p => p.status === "error").length,
+    stopped: projects.filter(p => p.status === "stopped").length,
+    totalCoinsPerHour: projects.filter(p => p.status === "running").reduce((s, p) => s + (p.coinCostPerHour || 0), 0),
+    totalDeploys: projects.reduce((s, p) => s + (p.deployCount || 0), 0),
+  };
+  res.json(stats);
+});
+
 // GET /templates
 router.get("/templates", async (req, res): Promise<void> => {
   const templates = [
