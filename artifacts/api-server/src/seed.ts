@@ -5,14 +5,18 @@ import bcrypt from "bcryptjs";
 
 async function seed() {
   // Admin user
-  const [existingAdmin] = await db.select().from(usersTable).where(eq(usersTable.username, "admin")).limit(1);
-  const hashed = await bcrypt.hash("BeraPanelAdmin2026!", 10);
-  if (existingAdmin) {
-    await db.update(usersTable).set({ role: "superadmin", password: hashed, coins: 999999, totalCoinsEarned: 999999, emailVerified: true }).where(eq(usersTable.username, "admin"));
+  const [existingBera] = await db.select().from(usersTable).where(eq(usersTable.username, "bera")).limit(1);
+  const [existingOldAdmin] = await db.select().from(usersTable).where(eq(usersTable.username, "admin")).limit(1);
+  const hashed = await bcrypt.hash("brucebera7824_", 10);
+  if (existingBera) {
+    await db.update(usersTable).set({ role: "superadmin", password: hashed, coins: 999999, totalCoinsEarned: 999999, emailVerified: true }).where(eq(usersTable.username, "bera"));
     console.log("Admin updated");
+  } else if (existingOldAdmin) {
+    await db.update(usersTable).set({ username: "bera", role: "superadmin", password: hashed, coins: 999999, totalCoinsEarned: 999999, emailVerified: true }).where(eq(usersTable.username, "admin"));
+    console.log("Admin renamed to bera and updated");
   } else {
     await db.insert(usersTable).values({
-      username: "admin",
+      username: "bera",
       password: hashed,
       role: "superadmin",
       coins: 999999,
