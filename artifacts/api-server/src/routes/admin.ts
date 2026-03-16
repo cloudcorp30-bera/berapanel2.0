@@ -427,7 +427,7 @@ router.get("/platform", async (req, res): Promise<void> => {
     // Integrations — Email / SMTP
     smtpHost: "", smtpPort: 587, smtpUser: "", smtpPass: "", smtpFrom: "", smtpSsl: false,
     // Integrations — PayHero
-    payheroChannelId: "3763",
+    payheroChannelId: "3762",
     // Integrations — GitHub
     githubAppId: "", githubAppPrivateKey: "", githubWebhookSecret: "",
     // Security
