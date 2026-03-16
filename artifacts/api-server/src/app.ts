@@ -2,7 +2,7 @@ import express, { type Express } from "express";
 import cors from "cors";
 import morgan from "morgan";
 import router from "./routes/index.js";
-import { createProxyMiddleware } from "http-proxy-middleware";
+import { createProxyMiddleware, responseInterceptor } from "http-proxy-middleware";
 import { db } from "@workspace/db";
 import { projectsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -31,11 +31,40 @@ app.use("/app/:projectId", async (req, res, next) => {
       `);
       return;
     }
+
+    const base = `/app/${projectId}`;
+
     const proxy = createProxyMiddleware({
       target: `http://localhost:${project.port}`,
       changeOrigin: true,
+      selfHandleResponse: true,
       pathRewrite: { [`^/app/${projectId}`]: "" },
       on: {
+        proxyRes: responseInterceptor(async (responseBuffer, proxyRes) => {
+          const contentType = proxyRes.headers["content-type"] || "";
+
+          // Only rewrite HTML responses
+          if (!contentType.includes("text/html")) {
+            return responseBuffer;
+          }
+
+          let html = responseBuffer.toString("utf8");
+
+          // Rewrite root-relative URLs (starting with /) but not protocol-relative (//)
+          // Covers: href="/path", src="/path", action="/path", fetch('/path'), axios.get('/path')
+          html = html.replace(
+            /(['"`])\/((?!\/)[^'"`\s>]*)/g,
+            `$1${base}/$2`
+          );
+
+          // Fix CSS url(/path) patterns
+          html = html.replace(
+            /url\(\/((?!\/)[^)]*)\)/g,
+            `url(${base}/$1)`
+          );
+
+          return Buffer.from(html, "utf8");
+        }),
         error: (err: any, req: any, res: any) => {
           if (!res.headersSent) {
             res.status(502).send("Project is starting up... Please wait.");
