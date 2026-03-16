@@ -7,13 +7,20 @@ import {
 import { Button } from "@/components/ui/Button";
 import {
   Coins as CoinsIcon, Send, Trophy, CheckCircle2, Flame,
-  ShoppingCart, Tag, Gift, History, RefreshCw, ArrowUpRight, ArrowDownLeft, Crown
+  ShoppingCart, Tag, Gift, History, ArrowUpRight, ArrowDownLeft, Crown,
+  Medal, Users, Link, Copy, Star, Award
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
-type Tab = "overview" | "buy" | "earn" | "transfer" | "history";
+const BASE = "/api/brucepanel";
+function apiFetch(path: string) {
+  const token = localStorage.getItem("token");
+  return fetch(`${BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+}
+
+type Tab = "overview" | "buy" | "earn" | "transfer" | "history" | "leaderboard" | "referrals" | "badges";
 
 function PayHeroBuyModal({ pkg, onClose, onSuccess }: { pkg: any; onClose: () => void; onSuccess: () => void }) {
   const [phone, setPhone] = useState("");
@@ -29,8 +36,7 @@ function PayHeroBuyModal({ pkg, onClose, onSuccess }: { pkg: any; onClose: () =>
     if (status?.status === "completed") {
       setPolling(false);
       toast({ title: "✅ Payment Successful!", description: `${status.coins} coins added to your balance!` });
-      onSuccess();
-      onClose();
+      onSuccess(); onClose();
     } else if (status?.status === "failed") {
       setPolling(false);
       toast({ title: "Payment Failed", description: "The M-Pesa payment was not completed.", variant: "destructive" });
@@ -40,15 +46,10 @@ function PayHeroBuyModal({ pkg, onClose, onSuccess }: { pkg: any; onClose: () =>
   const handlePay = (e: React.FormEvent) => {
     e.preventDefault();
     if (!phone.match(/^(?:254|\+254|0)?([71]\d{8})$/)) {
-      toast({ title: "Invalid phone", description: "Enter a valid Kenyan phone number (e.g. 0712345678)", variant: "destructive" });
-      return;
+      toast({ title: "Invalid phone", description: "Enter a valid Kenyan phone number (e.g. 0712345678)", variant: "destructive" }); return;
     }
     initiateMut.mutate({ data: { packageId: pkg.id, phone: phone.replace(/^0/, "254") } }, {
-      onSuccess: (res: any) => {
-        setCheckoutId(res.checkoutRequestId);
-        setPolling(true);
-        toast({ title: "STK Push Sent", description: "Check your phone and enter your M-Pesa PIN" });
-      },
+      onSuccess: (res: any) => { setCheckoutId(res.checkoutRequestId); setPolling(true); toast({ title: "STK Push Sent", description: "Check your phone and enter your M-Pesa PIN" }); },
       onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" })
     });
   };
@@ -78,14 +79,9 @@ function PayHeroBuyModal({ pkg, onClose, onSuccess }: { pkg: any; onClose: () =>
           <form onSubmit={handlePay} className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">M-Pesa Phone Number</label>
-              <input
-                required
-                type="tel"
+              <input required type="tel"
                 className="w-full px-4 py-3 bg-input border border-border rounded-lg outline-none focus:border-primary font-mono text-lg"
-                placeholder="0712 345 678"
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
-              />
+                placeholder="0712 345 678" value={phone} onChange={e => setPhone(e.target.value)} />
               <p className="text-xs text-muted-foreground">You'll receive an M-Pesa STK push prompt</p>
             </div>
             <Button type="submit" className="w-full bg-green-600 hover:bg-green-500 border-none text-white text-lg py-3" isLoading={initiateMut.isPending}>
@@ -104,6 +100,11 @@ export function CoinsPage() {
   const [buyPkg, setBuyPkg] = useState<any>(null);
   const [transferForm, setTransferForm] = useState({ toUsername: "", coins: 0, note: "" });
   const [promoCode, setPromoCode] = useState("");
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [referralInfo, setReferralInfo] = useState<any>(null);
+  const [referralLeaders, setReferralLeaders] = useState<any[]>([]);
+  const [badges, setBadges] = useState<any[]>([]);
+  const [payHistory, setPayHistory] = useState<any[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -120,31 +121,35 @@ export function CoinsPage() {
   const redeemPromoMut = useRedeemPromoCode();
   const claimAirdropMut = useClaimAirdrop();
 
-  const invalidateAll = () => {
-    refetchBalance();
-    refetchStreak();
-    queryClient.invalidateQueries({ queryKey: ["/api/brucepanel/auth/me"] });
-  };
+  useEffect(() => {
+    if (activeTab === "leaderboard") {
+      apiFetch("/coins/leaderboard").then(d => setLeaderboard(d.leaderboard || d || []));
+    }
+    if (activeTab === "referrals") {
+      apiFetch("/referral/info").then(d => setReferralInfo(d));
+      apiFetch("/referral/leaderboard").then(d => setReferralLeaders(d.leaderboard || d || []));
+    }
+    if (activeTab === "badges") {
+      apiFetch("/badges").then(d => setBadges(d.badges || d || []));
+    }
+    if (activeTab === "history") {
+      apiFetch("/subscribe/history").then(d => setPayHistory(d.payments || d || []));
+    }
+  }, [activeTab]);
+
+  const invalidateAll = () => { refetchBalance(); refetchStreak(); queryClient.invalidateQueries({ queryKey: ["/api/brucepanel/auth/me"] }); };
 
   const handleTransfer = (e: React.FormEvent) => {
     e.preventDefault();
     transferMut.mutate({ data: transferForm }, {
-      onSuccess: () => {
-        toast({ title: "✅ Transfer Successful" });
-        invalidateAll();
-        setTransferForm({ toUsername: "", coins: 0, note: "" });
-      },
+      onSuccess: () => { toast({ title: "✅ Transfer Successful" }); invalidateAll(); setTransferForm({ toUsername: "", coins: 0, note: "" }); },
       onError: (e: any) => toast({ title: "Transfer Failed", description: e.message, variant: "destructive" })
     });
   };
 
   const handleStreakClaim = () => {
     claimStreakMut.mutate(undefined, {
-      onSuccess: (res: any) => {
-        toast({ title: `🔥 Day ${res.newStreak} Streak!`, description: `+${res.coinsAwarded} coins claimed!` });
-        invalidateAll();
-        refetchStreak();
-      },
+      onSuccess: (res: any) => { toast({ title: `🔥 Day ${res.newStreak} Streak!`, description: `+${res.coinsAwarded} coins claimed!` }); invalidateAll(); refetchStreak(); },
       onError: (e: any) => toast({ title: "Already claimed", description: e.message, variant: "destructive" })
     });
   };
@@ -152,24 +157,23 @@ export function CoinsPage() {
   const handlePromoRedeem = (e: React.FormEvent) => {
     e.preventDefault();
     redeemPromoMut.mutate({ data: { code: promoCode } }, {
-      onSuccess: (res: any) => {
-        toast({ title: "🎁 Promo Redeemed!", description: res.message });
-        invalidateAll();
-        setPromoCode("");
-      },
+      onSuccess: (res: any) => { toast({ title: "🎁 Promo Redeemed!", description: res.message }); invalidateAll(); setPromoCode(""); },
       onError: (e: any) => toast({ title: "Invalid code", description: e.message, variant: "destructive" })
     });
   };
 
   const handleAirdropClaim = (id: string, coins: number) => {
     claimAirdropMut.mutate({ id }, {
-      onSuccess: () => {
-        toast({ title: "🎉 Airdrop Claimed!", description: `+${coins} coins added!` });
-        invalidateAll();
-        refetchAirdrops();
-      },
+      onSuccess: () => { toast({ title: "🎉 Airdrop Claimed!", description: `+${coins} coins added!` }); invalidateAll(); refetchAirdrops(); },
       onError: (e: any) => toast({ title: "Cannot claim", description: e.message, variant: "destructive" })
     });
+  };
+
+  const copyReferral = () => {
+    if (referralInfo?.referralCode) {
+      navigator.clipboard.writeText(`${window.location.origin}/register?ref=${referralInfo.referralCode}`);
+      toast({ title: "Referral link copied!" });
+    }
   };
 
   const tabs: { id: Tab; label: string; icon: any }[] = [
@@ -177,18 +181,17 @@ export function CoinsPage() {
     { id: "buy", label: "Buy Coins", icon: ShoppingCart },
     { id: "earn", label: "Earn Free", icon: Trophy },
     { id: "transfer", label: "Transfer", icon: Send },
+    { id: "leaderboard", label: "Leaderboard", icon: Medal },
+    { id: "referrals", label: "Referrals", icon: Users },
+    { id: "badges", label: "Badges", icon: Award },
     { id: "history", label: "History", icon: History },
   ];
 
+  const rankMedal = (i: number) => i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`;
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      {buyPkg && (
-        <PayHeroBuyModal
-          pkg={buyPkg}
-          onClose={() => setBuyPkg(null)}
-          onSuccess={invalidateAll}
-        />
-      )}
+      {buyPkg && <PayHeroBuyModal pkg={buyPkg} onClose={() => setBuyPkg(null)} onSuccess={invalidateAll} />}
 
       {/* Balance Hero */}
       <div className="glass-panel p-10 rounded-3xl bg-gradient-to-br from-card to-secondary border border-border relative overflow-hidden text-center">
@@ -208,22 +211,16 @@ export function CoinsPage() {
       {/* Tabs */}
       <div className="flex border-b border-border overflow-x-auto no-scrollbar">
         {tabs.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setActiveTab(t.id)}
-            className={`flex items-center gap-2 px-5 py-3 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
-              activeTab === t.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
+          <button key={t.id} onClick={() => setActiveTab(t.id)}
+            className={`flex items-center gap-2 px-5 py-3 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${activeTab === t.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
             <t.icon className="w-4 h-4" /> {t.label}
           </button>
         ))}
       </div>
 
-      {/* Tab Content */}
+      {/* Overview */}
       {activeTab === "overview" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Streak */}
           <div className="glass-panel p-6 rounded-2xl">
             <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Flame className="w-5 h-5 text-orange-400" /> Daily Streak</h3>
             <div className="flex items-center gap-4 mb-6">
@@ -234,56 +231,38 @@ export function CoinsPage() {
                 <p className="text-sm font-medium">Day {streak?.currentStreak || 0} streak</p>
                 <p className="text-xs text-muted-foreground">Reward: +{streak?.reward || 10} coins</p>
                 {!streak?.canClaim && streak?.nextClaimAt && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Next: {new Date(streak.nextClaimAt).toLocaleTimeString()}
-                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Next: {new Date(streak.nextClaimAt).toLocaleTimeString()}</p>
                 )}
               </div>
             </div>
-            <Button
-              className="w-full"
-              disabled={!streak?.canClaim}
-              isLoading={claimStreakMut.isPending}
-              onClick={handleStreakClaim}
-            >
+            <Button className="w-full" disabled={!streak?.canClaim} isLoading={claimStreakMut.isPending} onClick={handleStreakClaim}>
               {streak?.canClaim ? `🔥 Claim +${streak?.reward} Coins` : "✅ Already Claimed Today"}
             </Button>
           </div>
 
-          {/* Promo Code */}
           <div className="glass-panel p-6 rounded-2xl">
             <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Tag className="w-5 h-5 text-accent" /> Promo Code</h3>
             <form onSubmit={handlePromoRedeem} className="space-y-4">
               <div>
-                <input
-                  required
+                <input required
                   className="w-full px-4 py-3 bg-input border border-border rounded-lg outline-none focus:border-primary font-mono text-lg tracking-widest uppercase"
-                  placeholder="ENTER CODE"
-                  value={promoCode}
-                  onChange={e => setPromoCode(e.target.value.toUpperCase())}
-                />
+                  placeholder="ENTER CODE" value={promoCode} onChange={e => setPromoCode(e.target.value.toUpperCase())} />
                 <p className="text-xs text-muted-foreground mt-2">Try: <code className="text-accent">BERA2026</code> for 100 free coins!</p>
               </div>
               <Button type="submit" className="w-full" isLoading={redeemPromoMut.isPending}>Redeem Code</Button>
             </form>
           </div>
 
-          {/* Active Airdrops */}
           {airdrops && airdrops.filter((a: any) => !a.claimed).length > 0 && (
             <div className="glass-panel p-6 rounded-2xl md:col-span-2">
               <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Gift className="w-5 h-5 text-yellow-400" /> Active Airdrops</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {airdrops.filter((a: any) => !a.claimed).map((a: any) => (
                   <div key={a.id} className="flex items-center justify-between p-4 rounded-xl bg-secondary/50 border border-border">
-                    <div>
-                      <p className="font-semibold text-sm">{a.title}</p>
-                      <p className="text-xs text-muted-foreground">{a.description}</p>
-                    </div>
+                    <div><p className="font-semibold text-sm">{a.title}</p><p className="text-xs text-muted-foreground">{a.description}</p></div>
                     <div className="flex items-center gap-3">
                       <span className="font-mono text-yellow-400 font-bold">+{a.coins}</span>
-                      <Button size="sm" onClick={() => handleAirdropClaim(a.id, a.coins || 0)} isLoading={claimAirdropMut.isPending} className="text-xs px-3">
-                        Claim
-                      </Button>
+                      <Button size="sm" onClick={() => handleAirdropClaim(a.id, a.coins || 0)} isLoading={claimAirdropMut.isPending} className="text-xs px-3">Claim</Button>
                     </div>
                   </div>
                 ))}
@@ -293,17 +272,13 @@ export function CoinsPage() {
         </div>
       )}
 
+      {/* Buy Coins */}
       {activeTab === "buy" && (
         <div className="space-y-6">
           <p className="text-muted-foreground">Purchase coins instantly via M-Pesa. Payments are processed securely through PayHero.</p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {plans?.map((pkg: any) => (
-              <div
-                key={pkg.id}
-                className={`glass-panel rounded-2xl p-6 border cursor-pointer transition-all duration-200 hover:scale-105 ${
-                  pkg.badge === "popular" ? "border-primary/50 shadow-lg shadow-primary/20" : "border-border hover:border-primary/30"
-                }`}
-              >
+              <div key={pkg.id} className={`glass-panel rounded-2xl p-6 border cursor-pointer transition-all duration-200 hover:scale-105 ${pkg.badge === "popular" ? "border-primary/50 shadow-lg shadow-primary/20" : "border-border hover:border-primary/30"}`}>
                 {pkg.badge && (
                   <div className="flex items-center gap-1 mb-3">
                     <Crown className="w-4 h-4 text-yellow-400" />
@@ -317,14 +292,9 @@ export function CoinsPage() {
                     <span className="text-4xl font-mono font-bold text-yellow-400">{pkg.coins.toLocaleString()}</span>
                     <span className="text-muted-foreground">coins</span>
                   </div>
-                  {pkg.bonusCoins > 0 && (
-                    <p className="text-xs text-success font-medium">+ {pkg.bonusCoins.toLocaleString()} bonus coins!</p>
-                  )}
+                  {pkg.bonusCoins > 0 && <p className="text-xs text-success font-medium">+ {pkg.bonusCoins.toLocaleString()} bonus coins!</p>}
                 </div>
-                <Button
-                  className="w-full bg-green-600 hover:bg-green-500 border-none text-white"
-                  onClick={() => setBuyPkg(pkg)}
-                >
+                <Button className="w-full bg-green-600 hover:bg-green-500 border-none text-white" onClick={() => setBuyPkg(pkg)}>
                   Pay KSH {pkg.priceKsh} via M-Pesa
                 </Button>
               </div>
@@ -337,9 +307,32 @@ export function CoinsPage() {
               <p className="text-xs text-muted-foreground mt-0.5">All payments are processed securely via M-Pesa STK Push. Coins are credited instantly after payment confirmation.</p>
             </div>
           </div>
+
+          {payHistory.length > 0 && (
+            <div className="glass-panel rounded-2xl border border-border overflow-hidden">
+              <div className="px-4 py-3 border-b border-border bg-secondary/30">
+                <h3 className="text-sm font-semibold">Payment History</h3>
+              </div>
+              <div className="divide-y divide-border/50">
+                {payHistory.slice(0, 10).map((p: any, i: number) => (
+                  <div key={i} className="px-4 py-3 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">{p.packageName || "Coin Purchase"}</p>
+                      <p className="text-xs text-muted-foreground">{p.phone} • {new Date(p.createdAt).toLocaleDateString()}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-mono font-bold text-yellow-400">+{p.coins} coins</p>
+                      <p className="text-xs text-muted-foreground">KSH {p.amount}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
+      {/* Earn */}
       {activeTab === "earn" && (
         <div className="space-y-4">
           {options?.map(opt => (
@@ -348,10 +341,7 @@ export function CoinsPage() {
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center border ${opt.completed ? "bg-success/10 border-success/30" : "bg-primary/10 border-primary/20"}`}>
                   {opt.completed ? <CheckCircle2 className="w-6 h-6 text-success" /> : <Trophy className="w-6 h-6 text-primary" />}
                 </div>
-                <div>
-                  <h4 className="font-bold">{opt.title}</h4>
-                  <p className="text-xs text-muted-foreground">{opt.description}</p>
-                </div>
+                <div><h4 className="font-bold">{opt.title}</h4><p className="text-xs text-muted-foreground">{opt.description}</p></div>
               </div>
               <div className="flex items-center gap-3">
                 <span className="font-mono text-yellow-400 font-bold text-lg">+{opt.coins}</span>
@@ -362,45 +352,154 @@ export function CoinsPage() {
         </div>
       )}
 
+      {/* Transfer */}
       {activeTab === "transfer" && (
         <div className="max-w-md mx-auto glass-panel p-8 rounded-2xl">
           <h3 className="text-xl font-bold mb-6 flex items-center gap-2"><Send className="w-5 h-5 text-primary" /> Send Coins</h3>
           <form onSubmit={handleTransfer} className="space-y-5">
             <div className="space-y-2">
               <label className="text-sm font-medium">Recipient Username</label>
-              <input
-                required
-                className="w-full px-4 py-3 bg-input border border-border rounded-lg outline-none focus:border-primary"
-                placeholder="Enter username"
-                value={transferForm.toUsername}
-                onChange={e => setTransferForm(p => ({ ...p, toUsername: e.target.value }))}
-              />
+              <input required className="w-full px-4 py-3 bg-input border border-border rounded-lg outline-none focus:border-primary"
+                placeholder="Enter username" value={transferForm.toUsername} onChange={e => setTransferForm(p => ({ ...p, toUsername: e.target.value }))} />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Amount</label>
-              <input
-                type="number" required min="1" max={balance?.coins || 0}
+              <input type="number" required min="1" max={balance?.coins || 0}
                 className="w-full px-4 py-3 bg-input border border-border rounded-lg outline-none focus:border-primary font-mono text-xl"
-                value={transferForm.coins || ""}
-                placeholder="0"
-                onChange={e => setTransferForm(p => ({ ...p, coins: parseInt(e.target.value) || 0 }))}
-              />
+                value={transferForm.coins || ""} placeholder="0" onChange={e => setTransferForm(p => ({ ...p, coins: parseInt(e.target.value) || 0 }))} />
               <p className="text-xs text-muted-foreground">Balance: {(balance?.coins || 0).toLocaleString()} coins</p>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Note <span className="text-muted-foreground">(Optional)</span></label>
-              <input
-                className="w-full px-4 py-3 bg-input border border-border rounded-lg outline-none focus:border-primary"
-                placeholder="What's this for?"
-                value={transferForm.note}
-                onChange={e => setTransferForm(p => ({ ...p, note: e.target.value }))}
-              />
+              <input className="w-full px-4 py-3 bg-input border border-border rounded-lg outline-none focus:border-primary"
+                placeholder="What's this for?" value={transferForm.note} onChange={e => setTransferForm(p => ({ ...p, note: e.target.value }))} />
             </div>
             <Button type="submit" className="w-full" size="lg" isLoading={transferMut.isPending}>Send Coins</Button>
           </form>
         </div>
       )}
 
+      {/* Leaderboard */}
+      {activeTab === "leaderboard" && (
+        <div className="space-y-4">
+          <div className="glass-panel rounded-2xl border border-border overflow-hidden">
+            <div className="px-5 py-4 border-b border-border bg-gradient-to-r from-yellow-500/10 to-transparent flex items-center gap-2">
+              <Medal className="w-5 h-5 text-yellow-400" />
+              <h3 className="font-bold">Top Coin Holders</h3>
+            </div>
+            <div className="divide-y divide-border/50">
+              {leaderboard.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground text-sm">Loading leaderboard...</div>
+              ) : leaderboard.map((u: any, i: number) => (
+                <div key={u.id || i} className={`px-5 py-4 flex items-center gap-4 ${i < 3 ? "bg-yellow-500/5" : ""}`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg flex-shrink-0 ${i === 0 ? "bg-yellow-400/20 text-yellow-400" : i === 1 ? "bg-gray-400/20 text-gray-400" : i === 2 ? "bg-orange-600/20 text-orange-600" : "bg-secondary text-muted-foreground text-sm"}`}>
+                    {i < 3 ? rankMedal(i) : i + 1}
+                  </div>
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary/30 to-accent/30 border border-border flex items-center justify-center font-bold text-xs">
+                    {u.username?.charAt(0)?.toUpperCase()}
+                  </div>
+                  <div className="flex-1"><p className="font-semibold">{u.username}</p><p className="text-xs text-muted-foreground">Earned: {(u.totalCoinsEarned || 0).toLocaleString()}</p></div>
+                  <div className="text-right">
+                    <p className="font-mono font-bold text-yellow-400 text-lg">{(u.coins || 0).toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground">coins</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Referrals */}
+      {activeTab === "referrals" && (
+        <div className="space-y-6">
+          {referralInfo && (
+            <div className="glass-panel p-8 rounded-2xl border border-primary/20 text-center">
+              <div className="w-16 h-16 mx-auto rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center mb-4">
+                <Link className="w-8 h-8 text-primary" />
+              </div>
+              <h3 className="text-2xl font-bold mb-2">Your Referral Code</h3>
+              <div className="flex items-center justify-center gap-3 my-4">
+                <code className="text-3xl font-mono font-bold text-primary tracking-widest">{referralInfo.referralCode}</code>
+                <button onClick={copyReferral} className="p-2 rounded-lg hover:bg-primary/10 text-primary transition-colors"><Copy className="w-5 h-5" /></button>
+              </div>
+              <p className="text-muted-foreground text-sm mb-4">Share your link and earn coins for every user who signs up!</p>
+              <div className="grid grid-cols-3 gap-4 mt-6">
+                <div className="glass-panel rounded-xl p-3 border border-border text-center">
+                  <p className="text-2xl font-bold text-primary">{referralInfo.totalReferrals || 0}</p>
+                  <p className="text-xs text-muted-foreground">Total Referrals</p>
+                </div>
+                <div className="glass-panel rounded-xl p-3 border border-border text-center">
+                  <p className="text-2xl font-bold text-yellow-400">{(referralInfo.coinsEarned || 0).toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">Coins Earned</p>
+                </div>
+                <div className="glass-panel rounded-xl p-3 border border-border text-center">
+                  <p className="text-2xl font-bold text-green-400">{referralInfo.bonusPerReferral || 50}</p>
+                  <p className="text-xs text-muted-foreground">Bonus / Referral</p>
+                </div>
+              </div>
+              <Button className="mt-6 gap-2" onClick={copyReferral}>
+                <Copy className="w-4 h-4" /> Copy Referral Link
+              </Button>
+            </div>
+          )}
+
+          {referralLeaders.length > 0 && (
+            <div className="glass-panel rounded-2xl border border-border overflow-hidden">
+              <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+                <Users className="w-4 h-4 text-muted-foreground" />
+                <h3 className="font-bold text-sm">Top Referrers</h3>
+              </div>
+              <div className="divide-y divide-border/50">
+                {referralLeaders.map((u: any, i: number) => (
+                  <div key={u.id || i} className="px-5 py-3 flex items-center gap-3">
+                    <span className="w-8 text-center font-bold text-muted-foreground">{rankMedal(i)}</span>
+                    <div className="w-8 h-8 rounded-full bg-secondary border border-border flex items-center justify-center text-xs font-bold">{u.username?.charAt(0)?.toUpperCase()}</div>
+                    <span className="flex-1 font-medium">{u.username}</span>
+                    <span className="font-mono text-primary font-bold">{u.referralCount || 0} referrals</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Badges */}
+      {activeTab === "badges" && (
+        <div className="space-y-4">
+          <p className="text-muted-foreground">Earn badges by completing milestones and achievements on BeraPanel.</p>
+          {badges.length === 0 ? (
+            <div className="glass-panel rounded-2xl p-16 text-center border border-border">
+              <Award className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
+              <h3 className="text-xl font-bold mb-2">No Badges Yet</h3>
+              <p className="text-muted-foreground">Keep using BeraPanel to earn badges!</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {badges.map((badge: any) => (
+                <div key={badge.id} className={`glass-panel rounded-2xl p-5 border text-center transition-all ${badge.earned ? "border-yellow-500/30 bg-yellow-500/5" : "border-border opacity-50"}`}>
+                  <div className="text-5xl mb-3">{badge.icon || "🏅"}</div>
+                  <h4 className="font-bold text-sm mb-1">{badge.name}</h4>
+                  <p className="text-xs text-muted-foreground mb-2">{badge.description}</p>
+                  {badge.earned ? (
+                    <span className="text-xs text-yellow-400 font-bold">✓ Earned</span>
+                  ) : (
+                    <div className="mt-2">
+                      <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                        <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(100, (badge.progress || 0) / (badge.total || 1) * 100)}%` }} />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-1">{badge.progress || 0}/{badge.total || "?"}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* History */}
       {activeTab === "history" && (
         <div className="space-y-3">
           {!history?.transactions || history.transactions.length === 0 ? (
@@ -412,13 +511,8 @@ export function CoinsPage() {
           ) : (
             history.transactions.map((tx: any) => (
               <div key={tx.id} className="glass-panel rounded-xl p-4 border border-border flex items-center gap-4">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  (tx.coins || 0) > 0 ? "bg-success/10" : "bg-destructive/10"
-                }`}>
-                  {(tx.coins || 0) > 0
-                    ? <ArrowDownLeft className="w-5 h-5 text-success" />
-                    : <ArrowUpRight className="w-5 h-5 text-destructive" />
-                  }
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${(tx.coins || 0) > 0 ? "bg-success/10" : "bg-destructive/10"}`}>
+                  {(tx.coins || 0) > 0 ? <ArrowDownLeft className="w-5 h-5 text-success" /> : <ArrowUpRight className="w-5 h-5 text-destructive" />}
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium">{tx.description}</p>
