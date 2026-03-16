@@ -82,8 +82,22 @@ app.use("/app/:projectId", async (req, res, next) => {
 // process.cwd() is the monorepo root in both dev and production deployment
 const staticPath = path.resolve(process.cwd(), "artifacts/berapanel/dist/public");
 if (fs.existsSync(staticPath)) {
-  app.use(express.static(staticPath));
+  // Serve static assets with long-term caching (hashed filenames), but no cache for index.html
+  app.use(express.static(staticPath, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith("index.html")) {
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      } else if (filePath.includes("/assets/")) {
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      }
+    },
+  }));
   app.get("/{*path}", (req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.sendFile(path.join(staticPath, "index.html"));
   });
 } else {

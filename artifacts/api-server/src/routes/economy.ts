@@ -126,7 +126,7 @@ router.post("/subscribe/initiate", requireAuth, async (req, res): Promise<void> 
   const payheroAuth = process.env.PAYHERO_AUTH;
   const channelId = process.env.PAYHERO_CHANNEL_ID || "3762";
   const baseUrl = process.env.PAYHERO_BASE || "https://backend.payhero.co.ke/api/v2";
-  const callbackUrl = `${process.env.BASE_URL || ""}/api/brucepanel/subscribe/callback`;
+  const callbackUrl = `${process.env.BASE_URL || "https://bruce-panel-1.replit.app"}/api/brucepanel/subscribe/callback`;
 
   if (payheroAuth) {
     try {
