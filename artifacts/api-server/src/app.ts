@@ -8,10 +8,6 @@ import { projectsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import path from "path";
 import fs from "fs";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const PROD_URL = "https://bruce-panel-1.replit.app";
 
@@ -83,7 +79,8 @@ app.use("/app/:projectId", async (req, res, next) => {
 });
 
 // Serve frontend static build in production
-const staticPath = path.resolve(__dirname, "../../berapanel/dist/public");
+// process.cwd() is the monorepo root in both dev and production deployment
+const staticPath = path.resolve(process.cwd(), "artifacts/berapanel/dist/public");
 if (fs.existsSync(staticPath)) {
   app.use(express.static(staticPath));
   app.get("*", (req, res) => {
