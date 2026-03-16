@@ -177,6 +177,34 @@ function OverviewTab({ project }: { project: any }) {
       </div>
 
       <div className="space-y-6">
+        {project.liveUrl && (
+          <div className="glass-panel p-4 rounded-2xl border border-green-500/30 bg-green-500/5">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <span className="text-xs font-semibold text-green-400 uppercase tracking-wider">Live URL</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="text-sm text-green-300 flex-1 truncate break-all font-mono">
+                {project.liveUrl.startsWith('http') ? project.liveUrl : `https://${project.liveUrl}`}
+              </code>
+              <button
+                onClick={() => { navigator.clipboard.writeText(project.liveUrl.startsWith('http') ? project.liveUrl : `https://${project.liveUrl}`); }}
+                className="p-1.5 rounded-lg hover:bg-green-500/20 text-green-400 hover:text-green-300 transition-colors flex-shrink-0"
+                title="Copy URL"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+              </button>
+              <button
+                onClick={() => window.open(project.liveUrl.startsWith('http') ? project.liveUrl : `https://${project.liveUrl}`, '_blank')}
+                className="p-1.5 rounded-lg hover:bg-green-500/20 text-green-400 hover:text-green-300 transition-colors flex-shrink-0"
+                title="Open in new tab"
+              >
+                <Globe className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="glass-panel p-6 rounded-2xl">
           <h3 className="text-lg font-bold mb-4">Details</h3>
           <ul className="space-y-4 text-sm">
