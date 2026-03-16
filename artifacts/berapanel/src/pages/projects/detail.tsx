@@ -24,7 +24,8 @@ export function ProjectDetail() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: project, isLoading, refetch } = useGetProject(projectId, { query: { refetchInterval: 5000 } });
+  const { data: project, isLoading, refetch } = useGetProject(projectId);
+  useEffect(() => { const t = setInterval(() => refetch(), 5000); return () => clearInterval(t); }, [refetch]);
   
   const deployMut = useDeployProject();
   const startMut = useStartProject();
