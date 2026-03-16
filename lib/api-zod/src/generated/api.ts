@@ -464,6 +464,7 @@ export const UpdateProjectEnvParams = zod.object({
 
 export const UpdateProjectEnvBody = zod.object({
   env: zod.record(zod.string(), zod.string()),
+  restart: zod.boolean().optional(),
 });
 
 export const UpdateProjectEnvResponse = zod.object({

@@ -9,4 +9,5 @@ import type { UpdateProjectEnvBodyEnv } from "./updateProjectEnvBodyEnv";
 
 export type UpdateProjectEnvBody = {
   env: UpdateProjectEnvBodyEnv;
+  restart?: boolean;
 };

@@ -10,7 +10,6 @@ import { useTerminal } from "@/hooks/use-terminal";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { formatTimeAgo } from "@/lib/utils";
-import Editor from "@monaco-editor/react";
 import { 
   Activity, Play, Square, RotateCw, TerminalSquare, FileCode, Settings, FileText, 
   Rocket, Trash2, Save, Globe, Moon, Sun, Copy, Link as LinkIcon, ExternalLink, Check,
@@ -738,40 +737,53 @@ function TerminalTab({ projectId }: { projectId: string }) {
 }
 
 interface DetectedVar { key: string; defaultValue: string; source: string; description: string; }
+interface EnvEntry { key: string; value: string; id: number; }
 
 function EnvTab({ projectId }: { projectId: string }) {
   const { data, isLoading, refetch } = useGetProjectEnv(projectId);
   const updateMut = useUpdateProjectEnv();
   const { toast } = useToast();
-  const [envText, setEnvText] = useState("");
+  const [entries, setEntries] = useState<EnvEntry[]>([]);
+  const [nextId, setNextId] = useState(0);
 
-  // Detection state
   const [detecting, setDetecting] = useState(false);
-  const [detected, setDetected] = useState<DetectedVar[]>([]);
-  const [showDetect, setShowDetect] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [showValues, setShowValues] = useState<Set<string>>(new Set());
-  const [customValues, setCustomValues] = useState<Record<string, string>>({});
+  const [showValues, setShowValues] = useState<Set<number>>(new Set());
 
+  // Populate entries when data loads
   useEffect(() => {
     if (data?.env) {
-      setEnvText(Object.entries(data.env).map(([k,v]) => `${k}=${v}`).join('\n'));
+      const loaded = Object.entries(data.env as Record<string, string>).map(([key, value], i) => ({ key, value, id: i }));
+      setEntries(loaded);
+      setNextId(loaded.length);
     }
   }, [data]);
 
-  const parseCurrentEnv = (): Record<string, string> => {
-    const env: Record<string, string> = {};
-    envText.split('\n').forEach(l => {
-      const match = l.match(/^([^#\s][^=]*)=(.*)$/);
-      if (match) env[match[1].trim()] = match[2].trim();
-    });
-    return env;
+  const isSensitive = (key: string) =>
+    /TOKEN|KEY|SECRET|SESSION|PASSWORD|PASS|AUTH|CRED|PRIVATE/i.test(key);
+
+  const toggleShow = (id: number) =>
+    setShowValues(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const addEntry = () => {
+    setEntries(prev => [...prev, { key: "", value: "", id: nextId }]);
+    setNextId(n => n + 1);
   };
 
+  const removeEntry = (id: number) =>
+    setEntries(prev => prev.filter(e => e.id !== id));
+
+  const updateEntry = (id: number, field: "key" | "value", val: string) =>
+    setEntries(prev => prev.map(e => e.id === id ? { ...e, [field]: val } : e));
+
   const handleSave = () => {
-    const newEnv = parseCurrentEnv();
-    updateMut.mutate({ id: projectId, data: { env: newEnv } }, {
-      onSuccess: () => { toast({ title: "Environment Saved", description: "Changes will take effect on next restart." }); refetch(); }
+    const env: Record<string, string> = {};
+    entries.forEach(e => { if (e.key.trim()) env[e.key.trim()] = e.value; });
+    updateMut.mutate({ id: projectId, data: { env, restart: true } }, {
+      onSuccess: () => {
+        toast({ title: "✅ Saved & Restarted", description: "Your environment variables are now active." });
+        refetch();
+      },
+      onError: () => toast({ title: "Save failed", description: "Could not save environment variables.", variant: "destructive" }),
     });
   };
 
@@ -782,67 +794,44 @@ function EnvTab({ projectId }: { projectId: string }) {
       const res = await fetch(`/api/brucepanel/projects/${projectId}/env/detect`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      const data = await res.json();
-      setDetected(data.detected || []);
-      setShowDetect(true);
-      // Pre-select all not yet set
-      const currentEnv = parseCurrentEnv();
-      const toSelect = new Set<string>(
-        (data.detected || []).filter((v: DetectedVar) => !currentEnv[v.key]).map((v: DetectedVar) => v.key)
-      );
-      setSelected(toSelect);
-      // Pre-fill custom values with defaults
-      const defaults: Record<string, string> = {};
-      (data.detected || []).forEach((v: DetectedVar) => { if (v.defaultValue) defaults[v.key] = v.defaultValue; });
-      setCustomValues(defaults);
-      if (data.detected?.length === 0) toast({ title: "No Variables Found", description: "No environment variable references were detected in the project code." });
-      else toast({ title: `Detected ${data.detected.length} Variable${data.detected.length !== 1 ? 's' : ''}`, description: "Select which ones to add to your environment." });
+      const result = await res.json();
+      const detected: DetectedVar[] = result.detected || [];
+      if (detected.length === 0) {
+        toast({ title: "No variables found", description: "No environment variable references detected in the project code." });
+        return;
+      }
+      const currentKeys = new Set(entries.map(e => e.key.trim()));
+      const toAdd = detected.filter(v => !currentKeys.has(v.key));
+      if (toAdd.length === 0) {
+        toast({ title: "All variables already added", description: `${detected.length} variables detected — all already present.` });
+        return;
+      }
+      let id = nextId;
+      const newEntries = toAdd.map(v => ({ key: v.key, value: v.defaultValue || "", id: id++ }));
+      setEntries(prev => [...prev, ...newEntries]);
+      setNextId(id);
+      toast({ title: `Added ${newEntries.length} variable${newEntries.length !== 1 ? "s" : ""}`, description: "Fill in the values and click Save & Restart." });
     } catch {
-      toast({ title: "Detection Failed", description: "Could not scan the project files.", variant: "destructive" });
+      toast({ title: "Detection failed", description: "Could not scan project files.", variant: "destructive" });
     } finally {
       setDetecting(false);
     }
   };
 
-  const handleAddSelected = () => {
-    const currentEnv = parseCurrentEnv();
-    selected.forEach(key => {
-      const val = customValues[key] ?? "";
-      currentEnv[key] = val;
-    });
-    const newText = Object.entries(currentEnv).map(([k, v]) => `${k}=${v}`).join('\n');
-    setEnvText(newText);
-    setShowDetect(false);
-    toast({ title: `${selected.size} variable${selected.size !== 1 ? 's' : ''} added`, description: "Review and click Save & Restart to apply." });
-  };
-
-  const toggleSelect = (key: string) => {
-    setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
-  };
-
-  const toggleShowValue = (key: string) => {
-    setShowValues(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
-  };
-
-  const currentEnvKeys = Object.keys(parseCurrentEnv());
-
-  const sourceColor = (src: string) => {
-    if (src.includes('.env')) return 'text-green-400 bg-green-500/10 border-green-500/20';
-    if (src.includes('config')) return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
-    if (src.includes('.py')) return 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20';
-    return 'text-violet-400 bg-violet-500/10 border-violet-500/20';
-  };
-
-  if (isLoading) return <div className="flex items-center justify-center h-32 text-muted-foreground animate-pulse">Loading...</div>;
+  if (isLoading) return (
+    <div className="flex items-center justify-center h-32 text-muted-foreground animate-pulse">Loading variables...</div>
+  );
 
   return (
-    <div className="h-full flex flex-col gap-4">
+    <div className="h-full flex flex-col gap-4 overflow-hidden">
       {/* Header */}
-      <div className="flex justify-between items-start gap-3 flex-wrap">
+      <div className="flex justify-between items-center gap-3 flex-wrap flex-shrink-0">
         <div>
-          <p className="font-semibold flex items-center gap-2"><KeyRound className="w-4 h-4 text-primary" /> Environment Variables</p>
+          <p className="font-semibold flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-primary" /> Environment Variables
+          </p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            One per line: <code className="bg-secondary/60 px-1 rounded text-[11px]">KEY=value</code> — changes take effect on next restart
+            {entries.filter(e => e.key.trim()).length} variable{entries.filter(e => e.key.trim()).length !== 1 ? "s" : ""} — changes apply immediately on save
           </p>
         </div>
         <div className="flex gap-2">
@@ -852,7 +841,13 @@ function EnvTab({ projectId }: { projectId: string }) {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-violet-500/30 bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 text-xs font-medium transition-all disabled:opacity-50"
           >
             {detecting ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-            {detecting ? 'Scanning...' : 'Auto-Detect Variables'}
+            {detecting ? "Scanning..." : "Auto-Detect"}
+          </button>
+          <button
+            onClick={addEntry}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-secondary/60 hover:bg-secondary text-xs font-medium transition-all"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add Variable
           </button>
           <Button onClick={handleSave} isLoading={updateMut.isPending} className="gap-2 bg-primary hover:bg-primary/90 border-none text-white text-xs px-3 py-1.5 h-auto">
             <Save className="w-3.5 h-3.5" /> Save & Restart
@@ -860,130 +855,74 @@ function EnvTab({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      {/* Detection Results Panel */}
-      {showDetect && detected.length > 0 && (
-        <div className="glass-panel border border-violet-500/20 rounded-xl overflow-hidden">
-          {/* Panel Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-violet-500/5">
-            <div className="flex items-center gap-2">
-              <ScanSearch className="w-4 h-4 text-violet-400" />
-              <span className="text-sm font-medium">Detected Variables</span>
-              <span className="text-xs text-muted-foreground">({detected.length} found)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setSelected(new Set(detected.map(d => d.key)))}
-                className="text-xs text-primary hover:text-accent transition-colors"
-              >Select All</button>
-              <span className="text-muted-foreground">·</span>
-              <button
-                onClick={() => setSelected(new Set())}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >None</button>
-              <span className="text-muted-foreground">·</span>
-              <button onClick={() => setShowDetect(false)} className="text-muted-foreground hover:text-foreground">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Variable List */}
-          <div className="max-h-64 overflow-y-auto divide-y divide-border/50">
-            {detected.map(v => {
-              const isAlreadySet = currentEnvKeys.includes(v.key);
-              const isSelected = selected.has(v.key);
-              const showVal = showValues.has(v.key);
-              return (
-                <div
-                  key={v.key}
-                  className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${isSelected ? 'bg-primary/5' : 'hover:bg-secondary/30'}`}
-                >
-                  {/* Checkbox */}
-                  <button
-                    onClick={() => toggleSelect(v.key)}
-                    className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-all ${isSelected ? 'bg-primary border-primary' : 'border-border hover:border-primary/60'}`}
-                  >
-                    {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
-                  </button>
-
-                  {/* Key name */}
-                  <code className="text-sm font-mono font-medium text-foreground min-w-0 flex-shrink-0 w-44 truncate">{v.key}</code>
-
-                  {/* Value input */}
-                  <div className="flex-1 relative">
-                    <input
-                      type={showVal ? "text" : "password"}
-                      placeholder={v.defaultValue || "Enter value..."}
-                      value={customValues[v.key] ?? (v.defaultValue || "")}
-                      onChange={e => setCustomValues(prev => ({ ...prev, [v.key]: e.target.value }))}
-                      className="w-full bg-secondary/40 border border-border rounded-lg px-3 py-1 text-xs font-mono focus:outline-none focus:border-primary/60 pr-8"
-                    />
-                    <button
-                      onClick={() => toggleShowValue(v.key)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showVal ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                    </button>
-                  </div>
-
-                  {/* Source badge */}
-                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border flex-shrink-0 max-w-[120px] truncate ${sourceColor(v.source)}`}
-                    title={v.source}>
-                    {v.source.split('/').slice(-1)[0]}
-                  </span>
-
-                  {/* Status */}
-                  {isAlreadySet
-                    ? <span className="text-[10px] text-green-400 flex-shrink-0 flex items-center gap-0.5"><CheckCircle className="w-3 h-3" /> set</span>
-                    : <span className="text-[10px] text-amber-400 flex-shrink-0 flex items-center gap-0.5"><AlertTriangle className="w-3 h-3" /> missing</span>
-                  }
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Panel Footer */}
-          <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-secondary/20">
-            <span className="text-xs text-muted-foreground">
-              {selected.size} of {detected.length} selected
-              {currentEnvKeys.length > 0 && ` · ${detected.filter(d => currentEnvKeys.includes(d.key)).length} already set`}
-            </span>
-            <button
-              onClick={handleAddSelected}
-              disabled={selected.size === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Plus className="w-3.5 h-3.5" /> Add {selected.size > 0 ? `${selected.size} ` : ''}to Editor
+      {/* Variable rows */}
+      <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+        {entries.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-3 border border-dashed border-border rounded-xl">
+            <KeyRound className="w-8 h-8 opacity-30" />
+            <p className="text-sm">No variables yet</p>
+            <button onClick={addEntry} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-all">
+              <Plus className="w-3.5 h-3.5" /> Add your first variable
             </button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Monaco Editor */}
-      <div className="flex-1 border border-border rounded-xl overflow-hidden min-h-0">
-        <Editor
-          height="100%"
-          defaultLanguage="ini"
-          theme="vs-dark"
-          value={envText}
-          onChange={(val) => setEnvText(val || '')}
-          options={{
-            minimap: { enabled: false },
-            fontSize: 13,
-            fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-            lineNumbers: 'on',
-            renderLineHighlight: 'line',
-            scrollBeyondLastLine: false,
-            wordWrap: 'on',
-          }}
-        />
+        {entries.map(entry => {
+          const sensitive = isSensitive(entry.key);
+          const visible = showValues.has(entry.id);
+          const hasValue = entry.value.trim().length > 0;
+          return (
+            <div key={entry.id} className="flex items-center gap-2 group">
+              {/* Key */}
+              <input
+                value={entry.key}
+                onChange={e => updateEntry(entry.id, "key", e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_"))}
+                placeholder="VARIABLE_NAME"
+                spellCheck={false}
+                className="w-48 flex-shrink-0 px-3 py-2 bg-secondary border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 uppercase"
+              />
+              {/* Value */}
+              <div className="flex-1 relative">
+                <input
+                  type={sensitive && !visible ? "password" : "text"}
+                  value={entry.value}
+                  onChange={e => updateEntry(entry.id, "value", e.target.value)}
+                  placeholder={sensitive ? "••••••••" : "value"}
+                  spellCheck={false}
+                  className={`w-full px-3 py-2 bg-secondary border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40 ${hasValue ? "border-green-500/40 bg-green-500/5" : "border-border"} ${sensitive ? "pr-9" : ""}`}
+                />
+                {sensitive && (
+                  <button
+                    type="button"
+                    onClick={() => toggleShow(entry.id)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {visible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                )}
+              </div>
+              {/* Status dot */}
+              {hasValue
+                ? <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
+                : <div className="w-4 h-4 rounded-full border-2 border-amber-500/50 flex-shrink-0" />
+              }
+              {/* Delete */}
+              <button
+                onClick={() => removeEntry(entry.id)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-red-500/10 hover:text-red-400 text-muted-foreground flex-shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          );
+        })}
+
+        {entries.length > 0 && (
+          <button onClick={addEntry} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors py-1 pl-1">
+            <Plus className="w-3.5 h-3.5" /> Add another variable
+          </button>
+        )}
       </div>
-
-      {/* Footer hint */}
-      <p className="text-[11px] text-muted-foreground text-center">
-        <Sparkles className="w-3 h-3 inline mr-1 text-violet-400" />
-        Click <strong>Auto-Detect Variables</strong> to scan your app's code for <code className="bg-secondary/60 px-1 rounded">process.env.*</code>, <code className="bg-secondary/60 px-1 rounded">.env.example</code>, config files, and more.
-      </p>
     </div>
   );
 }

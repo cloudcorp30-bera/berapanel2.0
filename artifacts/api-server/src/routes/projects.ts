@@ -295,10 +295,24 @@ router.get("/projects/:id/env", requireAuth, async (req, res): Promise<void> => 
 // PUT /projects/:id/env
 router.put("/projects/:id/env", requireAuth, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const { env } = req.body;
+  const { env, restart: shouldRestart } = req.body;
   await db.update(projectsTable).set({ envVars: env, updatedAt: new Date() }).where(
     and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))
   );
+  // Restart the project so the new env vars take effect immediately
+  if (shouldRestart !== false) {
+    const [project] = await db.select().from(projectsTable).where(
+      and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))
+    ).limit(1);
+    if (project) {
+      try {
+        await stopProcess(project.id);
+        await startProcess({ ...project, envVars: env, autoRestart: project.autoRestart });
+      } catch {
+        // Non-fatal — env was saved, restart will apply on next manual restart
+      }
+    }
+  }
   res.json({ success: true });
 });
 
