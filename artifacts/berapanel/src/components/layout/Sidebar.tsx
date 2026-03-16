@@ -1,0 +1,126 @@
+import { Link, useLocation } from "wouter";
+import { cn } from "@/lib/utils";
+import {
+  LayoutDashboard,
+  Server,
+  Store,
+  Coins,
+  Gift,
+  Users,
+  Settings,
+  Terminal,
+  Activity,
+  LogOut,
+  LifeBuoy
+} from "lucide-react";
+import { useGetMe, useLogout } from "@workspace/api-client-react";
+
+export function Sidebar() {
+  const [location] = useLocation();
+  const { data: user } = useGetMe();
+  const logout = useLogout();
+
+  const mainLinks = [
+    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/projects", label: "Projects", icon: Server },
+    { href: "/marketplace", label: "Marketplace", icon: Store },
+    { href: "/coins", label: "Economy", icon: Coins },
+    { href: "/airdrops", label: "Airdrops", icon: Gift },
+    { href: "/support", label: "Support", icon: LifeBuoy },
+  ];
+
+  const adminLinks = [
+    { href: "/admin", label: "Overview", icon: Activity },
+    { href: "/admin/users", label: "Users", icon: Users },
+    { href: "/admin/settings", label: "Settings", icon: Settings },
+  ];
+
+  const isAdmin = user?.role === "admin" || user?.role === "superadmin";
+
+  const handleLogout = () => {
+    logout.mutate(undefined, {
+      onSuccess: () => window.location.href = "/login"
+    });
+  };
+
+  return (
+    <div className="w-64 border-r border-border bg-sidebar h-screen flex flex-col fixed left-0 top-0">
+      <div className="h-16 flex items-center px-6 border-b border-border">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20">
+            <Terminal className="w-5 h-5 text-white" />
+          </div>
+          <span className="font-display font-bold text-xl tracking-tight text-white">Bera<span className="text-primary">Panel</span></span>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto py-6 px-4 flex flex-col gap-8">
+        <div className="flex flex-col gap-1">
+          <h3 className="px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Main Menu</h3>
+          {mainLinks.map((link) => {
+            const active = location === link.href || (link.href !== '/dashboard' && location.startsWith(link.href));
+            return (
+              <Link 
+                key={link.href} 
+                href={link.href}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
+                  active 
+                    ? "bg-primary/10 text-primary border border-primary/20 shadow-sm" 
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground border border-transparent"
+                )}
+              >
+                <link.icon className={cn("w-5 h-5", active ? "text-primary" : "text-muted-foreground")} />
+                {link.label}
+              </Link>
+            );
+          })}
+        </div>
+
+        {isAdmin && (
+          <div className="flex flex-col gap-1">
+            <h3 className="px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Administration</h3>
+            {adminLinks.map((link) => {
+              const active = location === link.href;
+              return (
+                <Link 
+                  key={link.href} 
+                  href={link.href}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
+                    active 
+                      ? "bg-accent/10 text-accent border border-accent/20 shadow-sm" 
+                      : "text-muted-foreground hover:bg-secondary hover:text-foreground border border-transparent"
+                  )}
+                >
+                  <link.icon className={cn("w-5 h-5", active ? "text-accent" : "text-muted-foreground")} />
+                  {link.label}
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="p-4 border-t border-border">
+        <div className="glass-panel p-4 rounded-xl flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center border border-border">
+            <span className="font-bold text-sm">{user?.username?.charAt(0).toUpperCase()}</span>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <p className="text-sm font-bold truncate">{user?.username}</p>
+            <p className="text-xs text-muted-foreground truncate">{user?.coins || 0} Coins</p>
+          </div>
+        </div>
+        
+        <button 
+          onClick={handleLogout}
+          className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+          Log Out
+        </button>
+      </div>
+    </div>
+  );
+}
