@@ -19,6 +19,7 @@ import {
 import { eq, desc, and, ilike, sql, gte, count as countFn, or } from "drizzle-orm";
 import { requireAuth, requireAdmin } from "../lib/auth.js";
 import { awardCoins } from "../lib/coins.js";
+import { createNotification } from "../lib/notify.js";
 import { stopProcess, startProcess } from "../lib/process-manager.js";
 import si from "systeminformation";
 import bcrypt from "bcryptjs";
@@ -28,8 +29,8 @@ const router: IRouter = Router();
 // All admin routes require auth + admin role
 router.use(requireAuth, requireAdmin);
 
-// GET /admin/dashboard
-router.get("/admin/dashboard", async (req, res): Promise<void> => {
+// GET /dashboard
+router.get("/dashboard", async (req, res): Promise<void> => {
   const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(usersTable);
   const [projectCount] = await db.select({ count: sql<number>`count(*)` }).from(projectsTable);
   const [runningCount] = await db.select({ count: sql<number>`count(*)` }).from(projectsTable).where(eq(projectsTable.status, "running"));
@@ -55,7 +56,7 @@ router.get("/admin/dashboard", async (req, res): Promise<void> => {
 });
 
 // GET /admin/system
-router.get("/admin/system", async (req, res): Promise<void> => {
+router.get("/system", async (req, res): Promise<void> => {
   const cpu = await si.currentLoad();
   const mem = await si.mem();
   const disk = await si.fsSize();
@@ -73,7 +74,7 @@ router.get("/admin/system", async (req, res): Promise<void> => {
 });
 
 // GET /admin/users
-router.get("/admin/users", async (req, res): Promise<void> => {
+router.get("/users", async (req, res): Promise<void> => {
   const page = parseInt(req.query.page as string || "1");
   const limit = parseInt(req.query.limit as string || "20");
   const q = req.query.q as string;
@@ -94,7 +95,7 @@ router.get("/admin/users", async (req, res): Promise<void> => {
 });
 
 // GET /admin/users/:userId
-router.get("/admin/users/:userId", async (req, res): Promise<void> => {
+router.get("/users/:userId", async (req, res): Promise<void> => {
   const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (!user) {
@@ -106,16 +107,41 @@ router.get("/admin/users/:userId", async (req, res): Promise<void> => {
   res.json({ user: { ...user, password: undefined }, projects: projects.map(p => ({ ...p, envVars: {}, tags: p.tags || [], coinCostPerHour: Number(p.coinCostPerHour) })), transactions });
 });
 
-// POST /admin/users/:userId/coins
-router.post("/admin/users/:userId/coins", async (req, res): Promise<void> => {
+// POST /admin/users/:userId/coins  (amount can be negative to deduct)
+router.post("/users/:userId/coins", async (req, res): Promise<void> => {
   const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
   const { amount, reason } = req.body;
-  await awardCoins(userId, amount, "gift", reason || "Admin adjustment");
-  res.json({ success: true });
+  if (!amount || amount === 0) { res.status(400).json({ error: "Amount cannot be zero" }); return; }
+  if (amount > 0) {
+    await awardCoins(userId, amount, "admin_gift", reason || "Admin added coins");
+  } else {
+    // Deduct: clamp to 0
+    const [user] = await db.select({ coins: usersTable.coins }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    const deduct = Math.min(Math.abs(amount), user?.coins || 0);
+    await db.update(usersTable).set({ coins: sql`coins - ${deduct}` }).where(eq(usersTable.id, userId));
+    await db.insert(transactionsTable).values({ userId, type: "admin_deduct", coins: -deduct, status: "completed", description: reason || "Admin deducted coins" });
+  }
+  const [updated] = await db.select({ coins: usersTable.coins }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  await createNotification(userId, amount > 0 ? "Coins Added by Admin" : "Coins Deducted by Admin",
+    amount > 0 ? `${amount} coins have been added to your wallet` : `${Math.abs(amount)} coins were deducted from your wallet`, amount > 0 ? "success" : "warning", "billing");
+  res.json({ success: true, newBalance: updated?.coins });
+});
+
+// POST /admin/users/:userId/verify  — toggle blue verified badge
+router.post("/users/:userId/verify", async (req, res): Promise<void> => {
+  const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+  const [user] = await db.select({ emailVerified: usersTable.emailVerified, username: usersTable.username }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  const newVal = !user.emailVerified;
+  await db.update(usersTable).set({ emailVerified: newVal }).where(eq(usersTable.id, userId));
+  if (newVal) {
+    await createNotification(userId, "✅ Verified Badge Granted", "You have been verified on BeraPanel. Your blue badge is now active.", "success", "system");
+  }
+  res.json({ success: true, verified: newVal });
 });
 
 // POST /admin/users/:userId/ban
-router.post("/admin/users/:userId/ban", async (req, res): Promise<void> => {
+router.post("/users/:userId/ban", async (req, res): Promise<void> => {
   const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
   const { banned, reason, expiresAt } = req.body;
   await db.update(usersTable).set({ banned, banReason: reason, banExpiresAt: expiresAt ? new Date(expiresAt) : null }).where(eq(usersTable.id, userId));
@@ -123,7 +149,7 @@ router.post("/admin/users/:userId/ban", async (req, res): Promise<void> => {
 });
 
 // POST /admin/users/:userId/role
-router.post("/admin/users/:userId/role", async (req, res): Promise<void> => {
+router.post("/users/:userId/role", async (req, res): Promise<void> => {
   const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
   const { role } = req.body;
   await db.update(usersTable).set({ role }).where(eq(usersTable.id, userId));
@@ -131,14 +157,14 @@ router.post("/admin/users/:userId/role", async (req, res): Promise<void> => {
 });
 
 // DELETE /admin/users/:userId
-router.delete("/admin/users/:userId", async (req, res): Promise<void> => {
+router.delete("/users/:userId", async (req, res): Promise<void> => {
   const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
   await db.delete(usersTable).where(eq(usersTable.id, userId));
   res.json({ success: true });
 });
 
 // POST /admin/users/:userId/reset-password
-router.post("/admin/users/:userId/reset-password", async (req, res): Promise<void> => {
+router.post("/users/:userId/reset-password", async (req, res): Promise<void> => {
   const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
   const { newPassword } = req.body;
   const hashed = await bcrypt.hash(newPassword, 10);
@@ -147,7 +173,7 @@ router.post("/admin/users/:userId/reset-password", async (req, res): Promise<voi
 });
 
 // GET /admin/projects
-router.get("/admin/projects", async (req, res): Promise<void> => {
+router.get("/projects", async (req, res): Promise<void> => {
   const page = parseInt(req.query.page as string || "1");
   const limit = 20;
   const status = req.query.status as string;
@@ -165,7 +191,7 @@ router.get("/admin/projects", async (req, res): Promise<void> => {
 });
 
 // POST /admin/projects/:id/force-stop
-router.post("/admin/projects/:id/force-stop", async (req, res): Promise<void> => {
+router.post("/projects/:id/force-stop", async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   stopProcess(id);
   await db.update(projectsTable).set({ status: "stopped" }).where(eq(projectsTable.id, id));
@@ -173,7 +199,7 @@ router.post("/admin/projects/:id/force-stop", async (req, res): Promise<void> =>
 });
 
 // DELETE /admin/projects/:id
-router.delete("/admin/projects/:id", async (req, res): Promise<void> => {
+router.delete("/projects/:id", async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   stopProcess(id);
   await db.delete(projectsTable).where(eq(projectsTable.id, id));
@@ -181,7 +207,7 @@ router.delete("/admin/projects/:id", async (req, res): Promise<void> => {
 });
 
 // GET /admin/economy/overview
-router.get("/admin/economy/overview", async (req, res): Promise<void> => {
+router.get("/economy/overview", async (req, res): Promise<void> => {
   const [coinCirc] = await db.select({ sum: sql<number>`coalesce(sum(coins), 0)` }).from(usersTable);
   const [earned] = await db.select({ sum: sql<number>`coalesce(sum(total_coins_earned), 0)` }).from(usersTable);
   const [revenue] = await db.select({ sum: sql<number>`coalesce(sum(amount_ksh), 0)` }).from(transactionsTable).where(and(eq(transactionsTable.type, "purchase"), eq(transactionsTable.status, "completed")));
@@ -196,7 +222,7 @@ router.get("/admin/economy/overview", async (req, res): Promise<void> => {
 });
 
 // GET /admin/transactions
-router.get("/admin/transactions", async (req, res): Promise<void> => {
+router.get("/transactions", async (req, res): Promise<void> => {
   const page = parseInt(req.query.page as string || "1");
   const limit = 20;
   const type = req.query.type as string;
@@ -213,40 +239,40 @@ router.get("/admin/transactions", async (req, res): Promise<void> => {
 });
 
 // GET /admin/coin-packages
-router.get("/admin/coin-packages", async (req, res): Promise<void> => {
+router.get("/coin-packages", async (req, res): Promise<void> => {
   const pkgs = await db.select().from(coinPackagesTable).orderBy(coinPackagesTable.priceKsh);
   res.json(pkgs);
 });
 
 // POST /admin/coin-packages
-router.post("/admin/coin-packages", async (req, res): Promise<void> => {
+router.post("/coin-packages", async (req, res): Promise<void> => {
   const { name, description, priceKsh, coins, bonusCoins, badge, enabled } = req.body;
   const [pkg] = await db.insert(coinPackagesTable).values({ name, description, priceKsh, coins, bonusCoins: bonusCoins || 0, badge, enabled: enabled !== false }).returning();
   res.status(201).json(pkg);
 });
 
 // PUT /admin/coin-packages/:pkgId
-router.put("/admin/coin-packages/:pkgId", async (req, res): Promise<void> => {
+router.put("/coin-packages/:pkgId", async (req, res): Promise<void> => {
   const pkgId = Array.isArray(req.params.pkgId) ? req.params.pkgId[0] : req.params.pkgId;
   const [pkg] = await db.update(coinPackagesTable).set(req.body).where(eq(coinPackagesTable.id, pkgId)).returning();
   res.json(pkg);
 });
 
 // DELETE /admin/coin-packages/:pkgId
-router.delete("/admin/coin-packages/:pkgId", async (req, res): Promise<void> => {
+router.delete("/coin-packages/:pkgId", async (req, res): Promise<void> => {
   const pkgId = Array.isArray(req.params.pkgId) ? req.params.pkgId[0] : req.params.pkgId;
   await db.delete(coinPackagesTable).where(eq(coinPackagesTable.id, pkgId));
   res.json({ success: true });
 });
 
 // GET /admin/airdrops
-router.get("/admin/airdrops", async (req, res): Promise<void> => {
+router.get("/airdrops", async (req, res): Promise<void> => {
   const airdrops = await db.select().from(airdropsTable).orderBy(desc(airdropsTable.createdAt));
   res.json(airdrops.map(a => ({ ...a, claimed: false })));
 });
 
 // POST /admin/airdrops
-router.post("/admin/airdrops", async (req, res): Promise<void> => {
+router.post("/airdrops", async (req, res): Promise<void> => {
   const { title, description, coins, target, condition, startsAt, expiresAt, maxClaims } = req.body;
   const [airdrop] = await db.insert(airdropsTable).values({
     title, description, coins, target: target || "all", condition,
@@ -258,46 +284,46 @@ router.post("/admin/airdrops", async (req, res): Promise<void> => {
 });
 
 // DELETE /admin/airdrops/:id
-router.delete("/admin/airdrops/:id", async (req, res): Promise<void> => {
+router.delete("/airdrops/:id", async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   await db.delete(airdropsTable).where(eq(airdropsTable.id, id));
   res.json({ success: true });
 });
 
 // GET /admin/bots
-router.get("/admin/bots", async (req, res): Promise<void> => {
+router.get("/bots", async (req, res): Promise<void> => {
   const bots = await db.select().from(botTemplatesTable).orderBy(desc(botTemplatesTable.createdAt));
   res.json(bots.map(b => ({ ...b, requiredEnvVars: (b.requiredEnvVars as any[]) || [], tags: b.tags || [] })));
 });
 
 // POST /admin/bots
-router.post("/admin/bots", async (req, res): Promise<void> => {
+router.post("/bots", async (req, res): Promise<void> => {
   const [bot] = await db.insert(botTemplatesTable).values({ ...req.body, addedBy: req.user!.id }).returning();
   res.status(201).json({ ...bot, requiredEnvVars: (bot.requiredEnvVars as any[]) || [], tags: bot.tags || [] });
 });
 
 // PUT /admin/bots/:botId
-router.put("/admin/bots/:botId", async (req, res): Promise<void> => {
+router.put("/bots/:botId", async (req, res): Promise<void> => {
   const botId = Array.isArray(req.params.botId) ? req.params.botId[0] : req.params.botId;
   const [bot] = await db.update(botTemplatesTable).set(req.body).where(eq(botTemplatesTable.id, botId)).returning();
   res.json({ ...bot, requiredEnvVars: (bot.requiredEnvVars as any[]) || [], tags: bot.tags || [] });
 });
 
 // DELETE /admin/bots/:botId
-router.delete("/admin/bots/:botId", async (req, res): Promise<void> => {
+router.delete("/bots/:botId", async (req, res): Promise<void> => {
   const botId = Array.isArray(req.params.botId) ? req.params.botId[0] : req.params.botId;
   await db.delete(botTemplatesTable).where(eq(botTemplatesTable.id, botId));
   res.json({ success: true });
 });
 
 // GET /admin/promo
-router.get("/admin/promo", async (req, res): Promise<void> => {
+router.get("/promo", async (req, res): Promise<void> => {
   const codes = await db.select().from(promoCodesTable).orderBy(desc(promoCodesTable.createdAt));
   res.json(codes);
 });
 
 // POST /admin/promo
-router.post("/admin/promo", async (req, res): Promise<void> => {
+router.post("/promo", async (req, res): Promise<void> => {
   const { code, coins, discountPercent, maxUses, expiresAt, onePerUser } = req.body;
   const [promo] = await db.insert(promoCodesTable).values({
     code: code.toUpperCase(),
@@ -312,14 +338,14 @@ router.post("/admin/promo", async (req, res): Promise<void> => {
 });
 
 // DELETE /admin/promo/:code
-router.delete("/admin/promo/:code", async (req, res): Promise<void> => {
+router.delete("/promo/:code", async (req, res): Promise<void> => {
   const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
   await db.delete(promoCodesTable).where(eq(promoCodesTable.code, code));
   res.json({ success: true });
 });
 
 // GET /admin/support/tickets
-router.get("/admin/support/tickets", async (req, res): Promise<void> => {
+router.get("/support/tickets", async (req, res): Promise<void> => {
   const status = req.query.status as string;
   const priority = req.query.priority as string;
   let conditions: any[] = [];
@@ -331,7 +357,7 @@ router.get("/admin/support/tickets", async (req, res): Promise<void> => {
 });
 
 // POST /admin/support/tickets/:id/messages
-router.post("/admin/support/tickets/:id/messages", async (req, res): Promise<void> => {
+router.post("/support/tickets/:id/messages", async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const { message } = req.body;
   await db.insert(supportMessagesTable).values({ ticketId: id, senderId: req.user!.id, senderRole: req.user!.role, message });
@@ -340,7 +366,7 @@ router.post("/admin/support/tickets/:id/messages", async (req, res): Promise<voi
 });
 
 // PUT /admin/support/tickets/:id/status
-router.put("/admin/support/tickets/:id/status", async (req, res): Promise<void> => {
+router.put("/support/tickets/:id/status", async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const { status } = req.body;
   await db.update(supportTicketsTable).set({ status }).where(eq(supportTicketsTable.id, id));
@@ -348,13 +374,13 @@ router.put("/admin/support/tickets/:id/status", async (req, res): Promise<void> 
 });
 
 // GET /admin/announcements
-router.get("/admin/announcements", async (req, res): Promise<void> => {
+router.get("/announcements", async (req, res): Promise<void> => {
   const announcements = await db.select().from(announcementsTable).orderBy(desc(announcementsTable.createdAt));
   res.json(announcements);
 });
 
 // POST /admin/announcements
-router.post("/admin/announcements", async (req, res): Promise<void> => {
+router.post("/announcements", async (req, res): Promise<void> => {
   const { title, body, type, pinned, targetRole } = req.body;
   const [announcement] = await db.insert(announcementsTable).values({
     title, body, type: type || "info", pinned: pinned || false,
@@ -364,21 +390,21 @@ router.post("/admin/announcements", async (req, res): Promise<void> => {
 });
 
 // PUT /admin/announcements/:id
-router.put("/admin/announcements/:id", async (req, res): Promise<void> => {
+router.put("/announcements/:id", async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const [announcement] = await db.update(announcementsTable).set(req.body).where(eq(announcementsTable.id, id)).returning();
   res.json(announcement);
 });
 
 // DELETE /admin/announcements/:id
-router.delete("/admin/announcements/:id", async (req, res): Promise<void> => {
+router.delete("/announcements/:id", async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   await db.delete(announcementsTable).where(eq(announcementsTable.id, id));
   res.json({ success: true });
 });
 
 // GET /admin/platform
-router.get("/admin/platform", async (req, res): Promise<void> => {
+router.get("/platform", async (req, res): Promise<void> => {
   const settings = await db.select().from(platformSettingsTable);
   const result: Record<string, any> = {
     maxProjectsFree: 2, maxProjectsPro: 20, enablePayments: true,
@@ -393,7 +419,7 @@ router.get("/admin/platform", async (req, res): Promise<void> => {
 });
 
 // PUT /admin/platform
-router.put("/admin/platform", async (req, res): Promise<void> => {
+router.put("/platform", async (req, res): Promise<void> => {
   const { settings } = req.body;
   for (const [key, value] of Object.entries(settings || {})) {
     await db.insert(platformSettingsTable).values({ key, value: value as any, updatedAt: new Date() })
@@ -403,7 +429,7 @@ router.put("/admin/platform", async (req, res): Promise<void> => {
 });
 
 // GET /admin/analytics
-router.get("/admin/analytics", async (req, res): Promise<void> => {
+router.get("/analytics", async (req, res): Promise<void> => {
   const days: { date: string; count: number }[] = [];
   const deploys: { date: string; count: number }[] = [];
   const revenue: { date: string; amount: number }[] = [];
@@ -420,14 +446,14 @@ router.get("/admin/analytics", async (req, res): Promise<void> => {
 });
 
 // GET /admin/audit
-router.get("/admin/audit", async (req, res): Promise<void> => {
+router.get("/audit", async (req, res): Promise<void> => {
   const page = parseInt(req.query.page as string || "1");
   const entries = await db.select().from(auditLogTable).orderBy(desc(auditLogTable.createdAt)).limit(50).offset((page - 1) * 50);
   res.json(entries);
 });
 
 // POST /admin/coins/bulk
-router.post("/admin/coins/bulk", async (req, res): Promise<void> => {
+router.post("/coins/bulk", async (req, res): Promise<void> => {
   const { amount, reason, excludeAdmin } = req.body;
   let users = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.banned, false));
   if (excludeAdmin) users = users.filter(u => true);
@@ -438,7 +464,7 @@ router.post("/admin/coins/bulk", async (req, res): Promise<void> => {
 });
 
 // POST /admin/notifications
-router.post("/admin/notifications", async (req, res): Promise<void> => {
+router.post("/notifications", async (req, res): Promise<void> => {
   const { title, message, type, target } = req.body;
   let userIds: string[] = [];
   if (target === "all" || !target) {
@@ -454,7 +480,7 @@ router.post("/admin/notifications", async (req, res): Promise<void> => {
 });
 
 // PUT /admin/referrals/config
-router.put("/admin/referrals/config", async (req, res): Promise<void> => {
+router.put("/referrals/config", async (req, res): Promise<void> => {
   const { signupCoins, firstDeployCoins, firstPaymentCoins } = req.body;
   if (signupCoins !== undefined) await db.insert(referralConfigTable).values({ key: "signup_coins", value: signupCoins }).onConflictDoUpdate({ target: referralConfigTable.key, set: { value: signupCoins } });
   if (firstDeployCoins !== undefined) await db.insert(referralConfigTable).values({ key: "first_deploy_coins", value: firstDeployCoins }).onConflictDoUpdate({ target: referralConfigTable.key, set: { value: firstDeployCoins } });
@@ -463,7 +489,7 @@ router.put("/admin/referrals/config", async (req, res): Promise<void> => {
 });
 
 // POST /admin/emergency/stop-all
-router.post("/admin/emergency/stop-all", async (req, res): Promise<void> => {
+router.post("/emergency/stop-all", async (req, res): Promise<void> => {
   const running = await db.select({ id: projectsTable.id }).from(projectsTable).where(eq(projectsTable.status, "running"));
   for (const p of running) {
     stopProcess(p.id);
@@ -473,12 +499,12 @@ router.post("/admin/emergency/stop-all", async (req, res): Promise<void> => {
 });
 
 // POST /admin/emergency/restart-all
-router.post("/admin/emergency/restart-all", async (req, res): Promise<void> => {
+router.post("/emergency/restart-all", async (req, res): Promise<void> => {
   res.json({ success: true, message: "Restart all triggered" });
 });
 
 // POST /admin/emergency/broadcast
-router.post("/admin/emergency/broadcast", async (req, res): Promise<void> => {
+router.post("/emergency/broadcast", async (req, res): Promise<void> => {
   const { title, message, type } = req.body;
   const users = await db.select({ id: usersTable.id }).from(usersTable);
   for (const u of users) {
