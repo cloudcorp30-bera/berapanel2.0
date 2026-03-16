@@ -164,3 +164,64 @@ export const customDomainsTable = pgTable("custom_domains", {
   verifiedAt: timestamp("verified_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const projectWebhooksTable = pgTable("project_webhooks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull(),
+  url: text("url").notNull(),
+  events: text("events").array().default([]).notNull(),
+  secret: text("secret"),
+  enabled: boolean("enabled").default(true).notNull(),
+  lastTriggeredAt: timestamp("last_triggered_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type ProjectWebhook = typeof projectWebhooksTable.$inferSelect;
+
+export const chatChannelsTable = pgTable("chat_channels", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  slug: text("slug").unique().notNull(),
+  description: text("description"),
+  icon: text("icon").default("💬").notNull(),
+  type: text("type").default("public").notNull(),
+  createdBy: uuid("created_by").references(() => usersTable.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type ChatChannel = typeof chatChannelsTable.$inferSelect;
+
+export const chatMessagesTable = pgTable("chat_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  channelId: uuid("channel_id").references(() => chatChannelsTable.id, { onDelete: "cascade" }).notNull(),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "cascade" }).notNull(),
+  content: text("content").notNull(),
+  replyToId: uuid("reply_to_id"),
+  edited: boolean("edited").default(false).notNull(),
+  editedAt: timestamp("edited_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type ChatMessage = typeof chatMessagesTable.$inferSelect;
+
+export const featureFlagsTable = pgTable("feature_flags", {
+  key: text("key").primaryKey(),
+  label: text("label").notNull(),
+  description: text("description"),
+  enabled: boolean("enabled").default(true).notNull(),
+  updatedBy: uuid("updated_by").references(() => usersTable.id),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type FeatureFlag = typeof featureFlagsTable.$inferSelect;
+
+export const teamMembersTable = pgTable("team_members", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull(),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "cascade" }).notNull(),
+  role: text("role").default("viewer").notNull(),
+  invitedBy: uuid("invited_by").references(() => usersTable.id),
+  joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type TeamMember = typeof teamMembersTable.$inferSelect;
