@@ -1,0 +1,856 @@
+I need you to create BrucePanel — a fully self-hosted, production-ready Node.js cloud hosting platform and PaaS (Platform as a Service) built entirely from scratch. Think of it as a self-hosted hybrid of Railway + Heroku + Predoctly + Netlify, with its own economy system, bot marketplace, admin CMS, and external developer API. Every feature described below must be fully implemented — no stubs, no placeholders.
+
+STACK
+Backend: Node.js (ESM), Express.js, PostgreSQL (pg Pool), JWT (jsonwebtoken), bcrypt (bcryptjs), dotenv, cors, multer, adm-zip, child_process spawn, SSE (Server-Sent Events), uuid, node-cron, node-pty (PTY terminal), systeminformation, ws (WebSockets for terminal), express-rate-limit, helmet, morgan, nodemailer (optional email)
+
+Frontend: React 18, React Router v6, Vite, Tailwind CSS, Lucide React icons, xterm.js (terminal), Monaco Editor (code editor), Recharts (analytics charts), localStorage for JWT
+
+Server: Single Express server. Serves built React from client/dist/. API prefix /brucepanel/. External API prefix /bp-api/v1/.
+
+ENVIRONMENT VARIABLES
+DATABASE_URL=postgresql://...
+JWT_SECRET=long-random-string
+PORT=3000
+NODE_ENV=production
+BASE_URL=https://yourdomain.com
+DOMAIN=yourdomain.com
+# PayHero M-Pesa
+PAYHERO_AUTH=Basic ...
+PAYHERO_CHANNEL_ID=3762
+PAYHERO_BASE=https://backend.payhero.co.ke/api/v2
+# Telegram
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_ADMIN_CHAT_ID=...
+# Email (optional)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@gmail.com
+SMTP_PASS=...
+# GitHub OAuth (optional)
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
+# Admin seed
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=BeraPanelAdmin2026!
+# Feature flags
+ENABLE_PAYMENTS=true
+ENABLE_REFERRALS=true
+ENABLE_AIRDROPS=true
+ENABLE_BOT_MARKETPLACE=true
+MAX_PROJECTS_FREE=2
+MAX_PROJECTS_PRO=20
+FULL DATABASE SCHEMA
+-- ════════════════════════════
+-- USERS & AUTH
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  username TEXT UNIQUE NOT NULL,
+  password TEXT NOT NULL,
+  email TEXT,
+  role TEXT DEFAULT 'user',              -- 'user' | 'pro' | 'vip' | 'moderator' | 'admin' | 'superadmin'
+  coins INTEGER DEFAULT 0,
+  total_coins_earned INTEGER DEFAULT 0,
+  banned BOOLEAN DEFAULT false,
+  ban_reason TEXT,
+  ban_expires_at TIMESTAMPTZ,
+  bio TEXT,
+  avatar_url TEXT,
+  referral_code TEXT UNIQUE,
+  referred_by UUID REFERENCES users(id),
+  telegram_chat_id TEXT,
+  telegram_enabled BOOLEAN DEFAULT false,
+  email_verified BOOLEAN DEFAULT false,
+  two_fa_secret TEXT,
+  two_fa_enabled BOOLEAN DEFAULT false,
+  last_login TIMESTAMPTZ,
+  login_count INTEGER DEFAULT 0,
+  streak_days INTEGER DEFAULT 0,
+  last_streak_claim TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- SESSIONS (refresh tokens)
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  refresh_token TEXT UNIQUE,
+  ip_address TEXT,
+  user_agent TEXT,
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- PROJECTS
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS projects (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  repo_url TEXT,
+  branch TEXT DEFAULT 'main',
+  start_command TEXT DEFAULT 'node index.js',
+  build_command TEXT,
+  install_command TEXT DEFAULT 'npm install',
+  runtime TEXT DEFAULT 'node',           -- 'node' | 'python' | 'bun' | 'deno' | 'go' | 'bash'
+  env_vars JSONB DEFAULT '{}',
+  secrets JSONB DEFAULT '{}',            -- encrypted env vars
+  status TEXT DEFAULT 'stopped',         -- 'building' | 'running' | 'stopped' | 'error' | 'sleeping'
+  port INTEGER,
+  live_url TEXT,
+  custom_domain TEXT,
+  custom_domain_verified BOOLEAN DEFAULT false,
+  deploy_source TEXT DEFAULT 'github',   -- 'github' | 'zip' | 'folder' | 'template' | 'bot_template'
+  zip_filename TEXT,
+  webhook_secret TEXT,
+  health_check_url TEXT,
+  health_check_interval INTEGER DEFAULT 60,
+  auto_restart BOOLEAN DEFAULT true,
+  sleep_enabled BOOLEAN DEFAULT false,
+  sleep_after_minutes INTEGER DEFAULT 30,
+  last_request_at TIMESTAMPTZ,
+  memory_limit_mb INTEGER DEFAULT 512,
+  cpu_limit_percent INTEGER DEFAULT 80,
+  last_deployed_at TIMESTAMPTZ,
+  last_deployed_by UUID,
+  deploy_count INTEGER DEFAULT 0,
+  uptime_seconds INTEGER DEFAULT 0,
+  crash_count INTEGER DEFAULT 0,
+  is_public BOOLEAN DEFAULT false,        -- public project page
+  tags TEXT[],
+  pinned BOOLEAN DEFAULT false,
+  coin_cost_per_hour NUMERIC DEFAULT 0,  -- coins consumed per hour of uptime
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- DEPLOY HISTORY
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS deploy_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+  user_id UUID,
+  source TEXT,                           -- 'git' | 'zip' | 'webhook' | 'api' | 'rollback'
+  commit_hash TEXT,
+  commit_message TEXT,
+  status TEXT DEFAULT 'pending',         -- 'pending' | 'building' | 'success' | 'failed'
+  build_log TEXT,
+  duration_seconds INTEGER,
+  snapshot_path TEXT,                    -- path to pre-deploy snapshot zip
+  deployed_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- PROJECT METRICS (time series)
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS project_metrics (
+  id BIGSERIAL PRIMARY KEY,
+  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+  cpu_percent NUMERIC,
+  memory_mb NUMERIC,
+  request_count INTEGER DEFAULT 0,
+  error_count INTEGER DEFAULT 0,
+  recorded_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- CRON JOBS
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS cron_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT,
+  schedule TEXT,                         -- cron expression e.g. '*/5 * * * *'
+  command TEXT,
+  enabled BOOLEAN DEFAULT true,
+  last_run TIMESTAMPTZ,
+  next_run TIMESTAMPTZ,
+  run_count INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- TRANSACTIONS & ECONOMY
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT,                -- 'purchase' | 'earn' | 'spend' | 'referral' | 'airdrop' | 'streak' | 'gift' | 'refund' | 'transfer'
+  plan_id TEXT,
+  amount_ksh INTEGER,
+  coins INTEGER,
+  phone TEXT,
+  checkout_request_id TEXT,
+  status TEXT DEFAULT 'pending',
+  description TEXT,
+  meta JSONB,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- COIN PACKAGES (admin-configurable)
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS coin_packages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT,
+  description TEXT,
+  price_ksh INTEGER,
+  coins INTEGER,
+  bonus_coins INTEGER DEFAULT 0,
+  badge TEXT,                            -- 'popular' | 'best value' | ''
+  enabled BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- AIRDROPS
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS airdrops (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT,
+  description TEXT,
+  coins INTEGER,
+  target TEXT DEFAULT 'all',            -- 'all' | 'pro' | 'vip' | 'new_users' | 'inactive'
+  condition TEXT,                        -- 'none' | 'has_project' | 'streak_7' | 'referral_3'
+  starts_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ,
+  max_claims INTEGER,
+  claim_count INTEGER DEFAULT 0,
+  created_by UUID,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS airdrop_claims (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  airdrop_id UUID REFERENCES airdrops(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  claimed_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(airdrop_id, user_id)
+);
+-- ════════════════════════════
+-- REFERRALS
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS referrals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  referrer_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  referee_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  coins_awarded INTEGER,
+  milestone TEXT,                        -- 'signup' | 'first_deploy' | 'first_payment'
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS referral_config (
+  key TEXT PRIMARY KEY,
+  value JSONB
+);
+-- Default: signup=50 coins, first_deploy=100 coins, first_payment=200 coins
+-- ════════════════════════════
+-- LEADERBOARD / BADGES
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS user_badges (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  badge_id TEXT,                         -- 'early_adopter' | 'deployer_10' | 'whale' | 'streak_30' etc.
+  awarded_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- PROMO CODES
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS promo_codes (
+  code TEXT PRIMARY KEY,
+  coins INTEGER,
+  discount_percent INTEGER DEFAULT 0,
+  max_uses INTEGER,
+  uses INTEGER DEFAULT 0,
+  min_role TEXT DEFAULT 'user',
+  one_per_user BOOLEAN DEFAULT true,
+  expires_at TIMESTAMPTZ,
+  created_by UUID,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS promo_uses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code TEXT,
+  user_id UUID,
+  used_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- NOTIFICATIONS
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT,
+  message TEXT,
+  type TEXT DEFAULT 'info',
+  category TEXT DEFAULT 'general',      -- 'general' | 'deploy' | 'billing' | 'security' | 'system'
+  action_url TEXT,
+  read BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- API KEYS (External API)
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS api_keys (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  key TEXT UNIQUE NOT NULL,              -- bp_live_xxxxxxxxxxxxxxxx
+  name TEXT,
+  permissions JSONB DEFAULT '["read"]', -- ["read","deploy","logs","manage","admin"]
+  rate_limit INTEGER DEFAULT 100,        -- requests per minute
+  request_count INTEGER DEFAULT 0,
+  last_used TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ,               -- null = never
+  ip_whitelist TEXT[],                   -- [] = all IPs allowed
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS api_usage_logs (
+  id BIGSERIAL PRIMARY KEY,
+  key_id UUID REFERENCES api_keys(id) ON DELETE CASCADE,
+  method TEXT,
+  endpoint TEXT,
+  status_code INTEGER,
+  ip TEXT,
+  duration_ms INTEGER,
+  logged_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- BOT MARKETPLACE (Admin adds bots, users deploy them)
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS bot_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  description TEXT,
+  category TEXT,                         -- 'telegram' | 'discord' | 'whatsapp' | 'twitter' | 'utility' | 'game' | 'finance'
+  icon TEXT,                             -- emoji or image URL
+  repo_url TEXT,
+  branch TEXT DEFAULT 'main',
+  start_command TEXT,
+  install_command TEXT DEFAULT 'npm install',
+  runtime TEXT DEFAULT 'node',
+  required_env_vars JSONB DEFAULT '[]',  -- [{ key, label, description, required }]
+  tags TEXT[],
+  preview_image TEXT,
+  readme TEXT,
+  coin_cost INTEGER DEFAULT 0,           -- coins to deploy
+  deploy_count INTEGER DEFAULT 0,
+  rating_sum INTEGER DEFAULT 0,
+  rating_count INTEGER DEFAULT 0,
+  featured BOOLEAN DEFAULT false,
+  verified BOOLEAN DEFAULT false,
+  added_by UUID REFERENCES users(id),
+  enabled BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS bot_reviews (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_id UUID REFERENCES bot_templates(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  rating INTEGER,                        -- 1-5
+  comment TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(template_id, user_id)
+);
+-- ════════════════════════════
+-- SUPPORT / TICKETS
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  assigned_to UUID REFERENCES users(id),
+  subject TEXT,
+  category TEXT DEFAULT 'general',      -- 'billing' | 'technical' | 'abuse' | 'account' | 'general'
+  priority TEXT DEFAULT 'normal',        -- 'low' | 'normal' | 'high' | 'urgent'
+  status TEXT DEFAULT 'open',           -- 'open' | 'in_progress' | 'resolved' | 'closed'
+  created_at TIMESTAMPTZ DEFAULT now(),
+  resolved_at TIMESTAMPTZ,
+  closed_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS support_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id UUID REFERENCES support_tickets(id) ON DELETE CASCADE,
+  sender_id UUID,
+  sender_role TEXT,
+  message TEXT,
+  attachments JSONB DEFAULT '[]',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- ANNOUNCEMENTS / NEWS
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS announcements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT,
+  body TEXT,
+  type TEXT DEFAULT 'info',
+  pinned BOOLEAN DEFAULT false,
+  target_role TEXT DEFAULT 'all',
+  published BOOLEAN DEFAULT true,
+  created_by UUID,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- AUDIT LOG
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS audit_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_id UUID,
+  actor_username TEXT,
+  action TEXT,
+  resource_type TEXT,
+  resource_id TEXT,
+  detail JSONB,
+  ip TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- PLATFORM SETTINGS (KV store)
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS platform_settings (
+  key TEXT PRIMARY KEY,
+  value JSONB,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- TEAM / COLLABORATORS
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS project_collaborators (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT DEFAULT 'viewer',           -- 'viewer' | 'editor' | 'admin'
+  invited_by UUID,
+  accepted BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(project_id, user_id)
+);
+-- ════════════════════════════
+-- CUSTOM DOMAINS
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS custom_domains (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+  domain TEXT UNIQUE,
+  verified BOOLEAN DEFAULT false,
+  ssl_enabled BOOLEAN DEFAULT false,
+  cname_target TEXT,
+  txt_record TEXT,
+  verified_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- ADMIN NOTES
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS admin_notes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  content TEXT,
+  updated_by UUID,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+-- ════════════════════════════
+-- COIN TRANSFER LOG
+-- ════════════════════════════
+CREATE TABLE IF NOT EXISTS coin_transfers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  from_user_id UUID,
+  to_user_id UUID,
+  coins INTEGER,
+  note TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALL BACKEND API ROUTES
+AUTH
+POST /brucepanel/auth/register          { username, password, email, referralCode }
+POST /brucepanel/auth/login             { username, password } → { token, refreshToken, user }
+POST /brucepanel/auth/refresh           { refreshToken } → { token }
+POST /brucepanel/auth/logout            [auth] → invalidate session
+GET  /brucepanel/auth/me                [auth] → full user object
+POST /brucepanel/auth/change-password   [auth] { currentPassword, newPassword }
+POST /brucepanel/auth/github            → GitHub OAuth redirect
+GET  /brucepanel/auth/github/callback   → exchange code for token
+POST /brucepanel/auth/2fa/enable        [auth] { totpCode }
+POST /brucepanel/auth/2fa/disable       [auth] { totpCode }
+GET  /brucepanel/auth/2fa/setup         [auth] → { qrCode, secret }
+POST /brucepanel/auth/forgot-password   { email }
+POST /brucepanel/auth/reset-password    { token, newPassword }
+PROJECTS
+GET    /brucepanel/projects                              [auth]
+POST   /brucepanel/projects                              [auth] { name, description, repoUrl, branch, startCommand, buildCommand, runtime }
+GET    /brucepanel/projects/:id                          [auth]
+PUT    /brucepanel/projects/:id/settings                 [auth] { name, description, startCommand, branch, buildCommand, runtime, autoRestart, sleepEnabled, sleepAfterMinutes, healthCheckUrl, memoryLimitMb, tags, isPublic, pinned }
+DELETE /brucepanel/projects/:id                          [auth]
+POST   /brucepanel/projects/:id/start                    [auth]
+POST   /brucepanel/projects/:id/stop                     [auth]
+POST   /brucepanel/projects/:id/restart                  [auth]
+POST   /brucepanel/projects/:id/deploy                   [auth] { repoUrl, branch }
+POST   /brucepanel/projects/:id/reinstall                [auth]
+POST   /brucepanel/projects/:id/rollback/:deployId       [auth]
+POST   /brucepanel/projects/:id/clone                    [auth] { name }
+POST   /brucepanel/projects/:id/pin                      [auth]
+POST   /brucepanel/projects/:id/unpin                    [auth]
+GET    /brucepanel/projects/:id/deploy-history           [auth]
+GET    /brucepanel/projects/:id/liveurl                  [auth]
+GET    /brucepanel/projects/:id/metrics                  [auth] ?period=24h|7d|30d
+LOGS & CONSOLE
+GET    /brucepanel/projects/:id/logs                     [auth] ?lines=200
+GET    /brucepanel/projects/:id/logs/download            [auth]
+GET    /brucepanel/projects/:id/stream                   [auth] SSE → { type, data, ts }
+GET    /brucepanel/projects/:id/build-stream             [auth] SSE → build phase logs
+POST   /brucepanel/projects/:id/exec                     [auth] { command } → stdin relay
+GET    /brucepanel/projects/:id/terminal                 [auth] WebSocket → node-pty PTY shell in project dir
+FILE MANAGER
+GET    /brucepanel/projects/:id/files                    [auth] → recursive tree
+GET    /brucepanel/projects/:id/files/content            [auth] ?path=...
+PUT    /brucepanel/projects/:id/files/content            [auth] { path, content }
+DELETE /brucepanel/projects/:id/files                    [auth] ?path=...
+POST   /brucepanel/projects/:id/files/create             [auth] { path, type: 'file'|'dir' }
+POST   /brucepanel/projects/:id/files/rename             [auth] { from, to }
+POST   /brucepanel/projects/:id/files/move               [auth] { from, to }
+GET    /brucepanel/projects/:id/backup                   [auth] → ZIP download of project dir
+POST   /brucepanel/projects/:id/upload                   [auth] multipart ZIP/folder
+POST   /brucepanel/projects/:id/redeploy-zip             [auth]
+ENV VARS & SECRETS
+GET    /brucepanel/projects/:id/env                      [auth]
+PUT    /brucepanel/projects/:id/env                      [auth] { env } → restart
+GET    /brucepanel/projects/:id/secrets                  [auth] → keys only (values masked)
+PUT    /brucepanel/projects/:id/secrets                  [auth] { secrets } → encrypted in DB
+NPM / PACKAGES
+GET    /brucepanel/projects/:id/npm/packages             [auth]
+POST   /brucepanel/projects/:id/npm/install              [auth] { packages[], dev }
+DELETE /brucepanel/projects/:id/npm/uninstall            [auth] { packages[] }
+POST   /brucepanel/projects/:id/npm/run                  [auth] { script } → run package.json script
+CRON JOBS
+GET    /brucepanel/projects/:id/crons                    [auth]
+POST   /brucepanel/projects/:id/crons                    [auth] { name, schedule, command }
+PUT    /brucepanel/projects/:id/crons/:cronId             [auth] { name, schedule, command, enabled }
+DELETE /brucepanel/projects/:id/crons/:cronId             [auth]
+POST   /brucepanel/projects/:id/crons/:cronId/run         [auth] → trigger immediately
+WEBHOOKS (GitHub Auto-Deploy)
+GET    /brucepanel/projects/:id/webhook                  [auth]
+POST   /brucepanel/projects/:id/webhook/regenerate       [auth]
+POST   /brucepanel/webhook/:secret                       [public] verify + pull + restart
+COLLABORATORS / TEAMS
+GET    /brucepanel/projects/:id/collaborators            [auth]
+POST   /brucepanel/projects/:id/collaborators            [auth] { username, role }
+PUT    /brucepanel/projects/:id/collaborators/:userId    [auth] { role }
+DELETE /brucepanel/projects/:id/collaborators/:userId    [auth]
+POST   /brucepanel/projects/:id/collaborators/accept     [auth]
+CUSTOM DOMAINS
+GET    /brucepanel/projects/:id/domains                  [auth]
+POST   /brucepanel/projects/:id/domains                  [auth] { domain }
+POST   /brucepanel/projects/:id/domains/:domainId/verify [auth]
+DELETE /brucepanel/projects/:id/domains/:domainId        [auth]
+HEALTH CHECKS
+GET    /brucepanel/projects/:id/health                   [auth] → { status, lastCheck, latency }
+POST   /brucepanel/projects/:id/health/config            [auth] { url, intervalSeconds, restartOnFail }
+LIVE VIEW URL
+GET    /brucepanel/projects/:id/liveurl                  [auth]
+→ { liveUrl, port, status, customDomain, deployedAt }
+→ liveUrl generated as BASE_URL + ':' + port (port-based)
+→ or BASE_URL + '/live/' + projectId (path-based proxy mode)
+→ stored in DB on every successful deploy, shown as clickable badge in UI
+BOT MARKETPLACE
+GET    /brucepanel/bots                                  [public] → list all enabled bot templates
+GET    /brucepanel/bots/:id                              [public] → template detail + readme
+POST   /brucepanel/bots/:id/deploy                       [auth] { envVars, projectName } → creates project from template
+POST   /brucepanel/bots/:id/review                       [auth] { rating, comment }
+GET    /brucepanel/bots/categories                       → list categories with counts
+GET    /brucepanel/bots/featured                         → featured bots
+GET    /brucepanel/bots/:id/reviews                      → reviews list
+ECONOMY — COINS
+GET    /brucepanel/coins/balance                         [auth]
+GET    /brucepanel/coins/history                         [auth] ?page=1
+POST   /brucepanel/coins/transfer                        [auth] { toUsername, coins, note }
+GET    /brucepanel/coins/leaderboard                     → top 50 users by coins
+GET    /brucepanel/coins/earn-options                    → list ways to earn coins
+SUBSCRIPTIONS & PAYMENTS (PayHero M-Pesa)
+GET    /brucepanel/subscribe/plans                       → dynamic from coin_packages table
+POST   /brucepanel/subscribe/initiate                    [auth] { packageId, phone }
+GET    /brucepanel/subscribe/status/:checkoutRequestId   [auth]
+POST   /brucepanel/subscribe/callback                    [PayHero webhook — public]
+GET    /brucepanel/subscribe/history                     [auth] → payment history
+POST   /brucepanel/subscribe/request-refund              [auth] { transactionId, reason }
+AIRDROPS
+GET    /brucepanel/airdrops                              [auth] → active claimable airdrops
+POST   /brucepanel/airdrops/:id/claim                   [auth]
+GET    /brucepanel/airdrops/history                      [auth] → claimed airdrops
+REFERRALS
+GET    /brucepanel/referral/info                         [auth] → { code, link, stats, history }
+GET    /brucepanel/referral/leaderboard                  → top referrers
+DAILY STREAK
+GET    /brucepanel/streak/status                         [auth] → { currentStreak, canClaim, nextClaim, reward }
+POST   /brucepanel/streak/claim                          [auth] → award coins (progressive: day1=10, day7=100, day30=500)
+PROMO CODES
+POST   /brucepanel/promo/redeem                          [auth] { code }
+STORE
+GET    /brucepanel/store                                 → items list
+POST   /brucepanel/store/buy                             [auth] { itemId }
+Store items: Extra project slot, Custom domain slot, Priority support, VIP badge, Extended log retention, Higher memory limit, Bot deploy credit, Rename username token
+
+LEADERBOARD & BADGES
+GET    /brucepanel/leaderboard                           → top users by coins, deploys, projects
+GET    /brucepanel/badges                                → all badge definitions
+GET    /brucepanel/users/:username/public                → public profile (if enabled)
+ACCOUNT
+PUT    /brucepanel/account/profile                       [auth] { email, bio, avatarUrl }
+PUT    /brucepanel/account/password                      [auth] { currentPassword, newPassword }
+GET    /brucepanel/account/activity                      [auth]
+GET    /brucepanel/account/sessions                      [auth] → active sessions
+DELETE /brucepanel/account/sessions/:id                  [auth]
+GET    /brucepanel/account/telegram                      [auth]
+PUT    /brucepanel/account/telegram                      [auth] { chatId, enabled }
+DELETE /brucepanel/account/delete                        [auth] { password } → GDPR delete
+POST   /brucepanel/account/export                        [auth] → download account data as JSON
+API KEYS (External BrucePanel API)
+GET    /brucepanel/api/keys                              [auth]
+POST   /brucepanel/api/keys                              [auth] { name, permissions[], expiresAt, ipWhitelist[], rateLimit }
+DELETE /brucepanel/api/keys/:id                          [auth]
+GET    /brucepanel/api/keys/:id/usage                    [auth] → usage logs + graph
+PUT    /brucepanel/api/keys/:id/rotate                   [auth] → new key value, same id
+NOTIFICATIONS
+GET    /brucepanel/notifications                         [auth] ?unread=true
+PUT    /brucepanel/notifications/:id/read                [auth]
+POST   /brucepanel/notifications/read-all                [auth]
+DELETE /brucepanel/notifications/:id                     [auth]
+ANNOUNCEMENTS
+GET    /brucepanel/announcements                         [auth]
+SUPPORT / TICKETS
+GET    /brucepanel/support/tickets                       [auth]
+POST   /brucepanel/support/tickets                       [auth] { subject, category, priority, message }
+GET    /brucepanel/support/tickets/:id                   [auth]
+POST   /brucepanel/support/tickets/:id/messages          [auth] { message }
+PUT    /brucepanel/support/tickets/:id/close             [auth]
+PUT    /brucepanel/support/tickets/:id/reopen            [auth]
+POST   /brucepanel/support/tickets/:id/rate              [auth] { rating }
+PUBLIC STATUS PAGE
+GET    /brucepanel/status                                → { totalProjects, runningProjects, totalUsers, uptime, version, platform }
+TEMPLATES
+GET    /brucepanel/templates                             → starter templates list
+EXTERNAL BRUCEPANEL API (/bp-api/v1/)
+Auth: Authorization: Bearer bp_live_xxxxxxxxxxxxxxxx
+
+All responses: { success, data, error, rateLimit: { limit, remaining, resetAt } }
+
+GET    /bp-api/v1/user                                   → user info + coin balance
+GET    /bp-api/v1/projects                               → project list
+POST   /bp-api/v1/projects                               → create project
+GET    /bp-api/v1/projects/:id                           → detail + liveUrl + status
+POST   /bp-api/v1/projects/:id/start
+POST   /bp-api/v1/projects/:id/stop
+POST   /bp-api/v1/projects/:id/restart
+POST   /bp-api/v1/projects/:id/deploy                    { repoUrl, branch }
+GET    /bp-api/v1/projects/:id/logs                      ?lines=100
+GET    /bp-api/v1/projects/:id/liveurl
+GET    /bp-api/v1/projects/:id/metrics
+PUT    /bp-api/v1/projects/:id/env                       { env }
+POST   /bp-api/v1/projects/:id/exec                      { command }
+GET    /bp-api/v1/coins                                  → balance
+POST   /bp-api/v1/coins/transfer                         { toUsername, coins }
+GET    /bp-api/v1/bots                                   → bot marketplace list
+POST   /bp-api/v1/bots/:id/deploy                        { projectName, envVars }
+GET    /bp-api/v1/notifications
+POST   /bp-api/v1/webhook/trigger/:projectId             { event, payload }
+Example — Telegram bot integration:
+
+// Deploy a bot template from a Telegram command
+bot.onText(/\/deploy (.+)/, async (msg, match) => {
+  const res = await fetch('https://yourpanel.com/bp-api/v1/bots/TEMPLATE_ID/deploy', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer bp_live_xxx', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectName: match[1], envVars: { BOT_TOKEN: 'xxx' } })
+  });
+  const { data } = await res.json();
+  bot.sendMessage(msg.chat.id, `✅ Deployed! Live at: ${data.liveUrl}`);
+});
+ADMIN PANEL — ALL ROUTES
+GET    /brucepanel/admin/dashboard                       → { users, projects, revenue, runningProjects, todaySignups, coinsInCirculation }
+GET    /brucepanel/admin/system                          → CPU%, RAM MB, disk GB, loadAvg, nodeVersion, uptime, processCount
+GET    /brucepanel/admin/live-feed                       → real-time events SSE (deploys, signups, payments)
+-- USERS --
+GET    /brucepanel/admin/users                           ?page=&limit=&q=&role=&banned=&minCoins=&maxCoins=&sortBy=
+GET    /brucepanel/admin/users/:id                       → full profile + projects + transactions
+POST   /brucepanel/admin/users/:id/coins                 { amount, reason }
+POST   /brucepanel/admin/users/:id/ban                   { banned, reason, expiresAt }
+POST   /brucepanel/admin/users/:id/role                  { role }
+POST   /brucepanel/admin/users/:id/message               { title, message, type }
+POST   /brucepanel/admin/users/:id/impersonate           → short-lived impersonation token
+DELETE /brucepanel/admin/users/:id                       → GDPR delete
+POST   /brucepanel/admin/users/:id/reset-password        { newPassword }
+POST   /brucepanel/admin/users/:id/verify-email          → force verify
+POST   /brucepanel/admin/users/bulk-action               { userIds[], action, value, reason }
+GET    /brucepanel/admin/users/export                    → CSV download
+-- PROJECTS --
+GET    /brucepanel/admin/projects                        ?page=&status=&userId=
+GET    /brucepanel/admin/projects/:id                    → full detail
+GET    /brucepanel/admin/projects/:id/logs               → log tail
+POST   /brucepanel/admin/projects/:id/force-stop
+POST   /brucepanel/admin/projects/:id/force-start
+DELETE /brucepanel/admin/projects/:id
+GET    /brucepanel/admin/projects/export
+-- ECONOMY --
+GET    /brucepanel/admin/economy/overview                → { totalCoins, totalSpent, totalEarned, averageBalance }
+GET    /brucepanel/admin/transactions                    ?page=&type=&status=
+GET    /brucepanel/admin/transactions/export
+POST   /brucepanel/admin/coins/bulk                      { amount, reason, excludeAdmin }
+POST   /brucepanel/admin/coins/gift                      { userIds[], coins, reason }
+POST   /brucepanel/admin/coins/airdrop                   → create airdrop
+GET    /brucepanel/admin/coins/leaderboard
+GET    /brucepanel/admin/coin-packages
+POST   /brucepanel/admin/coin-packages                   { name, description, priceKsh, coins, bonusCoins, badge }
+PUT    /brucepanel/admin/coin-packages/:id               
+DELETE /brucepanel/admin/coin-packages/:id
+-- AIRDROPS --
+GET    /brucepanel/admin/airdrops
+POST   /brucepanel/admin/airdrops                        { title, description, coins, target, condition, startsAt, expiresAt, maxClaims }
+PUT    /brucepanel/admin/airdrops/:id
+DELETE /brucepanel/admin/airdrops/:id
+GET    /brucepanel/admin/airdrops/:id/claims             → who claimed
+-- REFERRALS --
+GET    /brucepanel/admin/referrals                       → stats + top referrers
+PUT    /brucepanel/admin/referrals/config                { signupCoins, firstDeployCoins, firstPaymentCoins }
+-- PROMO CODES --
+GET    /brucepanel/admin/promo
+POST   /brucepanel/admin/promo                           { code, coins, discountPercent, maxUses, expiresAt, onePerUser }
+DELETE /brucepanel/admin/promo/:code
+-- BOT MARKETPLACE --
+GET    /brucepanel/admin/bots
+POST   /brucepanel/admin/bots                            { name, description, category, repoUrl, branch, startCommand, installCommand, runtime, requiredEnvVars[], tags[], previewImage, readme, coinCost, featured }
+PUT    /brucepanel/admin/bots/:id
+DELETE /brucepanel/admin/bots/:id
+POST   /brucepanel/admin/bots/:id/feature                { featured }
+POST   /brucepanel/admin/bots/:id/verify                 { verified }
+-- SUPPORT --
+GET    /brucepanel/admin/support/tickets                 ?status=&priority=&category=&assignedTo=
+GET    /brucepanel/admin/support/tickets/:id
+POST   /brucepanel/admin/support/tickets/:id/messages    { message }
+PUT    /brucepanel/admin/support/tickets/:id/assign       { userId }
+PUT    /brucepanel/admin/support/tickets/:id/priority     { priority }
+PUT    /brucepanel/admin/support/tickets/:id/status       { status }
+GET    /brucepanel/admin/support/stats
+-- ANNOUNCEMENTS --
+GET    /brucepanel/admin/announcements
+POST   /brucepanel/admin/announcements                   { title, body, type, pinned, targetRole }
+PUT    /brucepanel/admin/announcements/:id
+DELETE /brucepanel/admin/announcements/:id
+-- NOTIFICATIONS --
+POST   /brucepanel/admin/notifications                   { userIds[]|target:'all', title, message, type, category }
+POST   /brucepanel/admin/notifications/purge             { olderThanDays }
+-- PLATFORM SETTINGS --
+GET    /brucepanel/admin/platform
+PUT    /brucepanel/admin/platform                        { settings: { maxProjectsFree, maxProjectsPro, enablePayments, enableReferrals, enableAirdrops, enableBotMarket, defaultCoinsOnSignup, platformName, platformLogo, supportEmail, maintenanceMode, registrationOpen, coinValueKsh } }
+-- ANALYTICS --
+GET    /brucepanel/admin/analytics                       → charts data: signups/day, deploys/day, revenue/day, active projects
+GET    /brucepanel/admin/analytics/revenue               ?period=30d
+GET    /brucepanel/admin/analytics/users                 ?period=30d
+GET    /brucepanel/admin/analytics/projects              ?period=30d
+-- AUDIT LOG --
+GET    /brucepanel/admin/audit                           ?page=&actor=&action=&resource=
+-- NOTES --
+GET    /brucepanel/admin/notes
+PUT    /brucepanel/admin/notes
+-- EMERGENCY --
+POST   /brucepanel/admin/emergency/stop-all
+POST   /brucepanel/admin/emergency/restart-all
+POST   /brucepanel/admin/emergency/maintenance           { enabled, message }
+POST   /brucepanel/admin/emergency/broadcast             { title, message, type }
+PROCESS MANAGER ENGINE
+const processes = new Map();    // id → ChildProcess
+const logBuffers = new Map();   // id → string[] (rolling 1000 lines)
+const sseClients = new Map();   // id → Set<Response>
+const portPool = new Set();     // 3001–4000
+function assignPort() { /* find unused port in 3001-4000 */ }
+async function deployFromGit(project) {
+  const dir = path.join(PROJECTS_DIR, project.id);
+  // clone if new, pull if exists
+  // run install_command
+  // record deploy_history with snapshot
+  // start process
+  // update live_url in DB
+  // send Telegram + in-app notification
+}
+async function deployFromZip(project, zipPath) {
+  // extract adm-zip to project dir
+  // detect runtime, run install
+  // start process
+}
+function startProcess(project) {
+  const proc = spawn('sh', ['-c', project.start_command], {
+    cwd: path.join(PROJECTS_DIR, project.id),
+    env: { ...process.env, ...project.env_vars, PORT: project.port },
+    stdio: ['pipe', 'pipe', 'pipe']
+  });
+  proc.stdout.on('data', d => broadcastLog(project.id, d.toString()));
+  proc.stderr.on('data', d => broadcastLog(project.id, d.toString()));
+  proc.on('exit', (code) => {
+    if (project.auto_restart && code !== 0) setTimeout(() => startProcess(project), 3000);
+  });
+  processes.set(project.id, proc);
+}
+// PTY terminal via WebSocket + node-pty
+function handleTerminalWS(ws, projectId) {
+  const pty = nodePty.spawn('bash', [], {
+    cwd: path.join(PROJECTS_DIR, projectId),
+    env: process.env,
+    cols: 80, rows: 24
+  });
+  ws.on('message', data => pty.write(data));
+  pty.onData(data => ws.send(data));
+  ws.on('close', () => pty.kill());
+}
+COIN ECONOMY SYSTEM
+Earning coins:
+
+Sign up bonus (configurable, default 50)
+Daily login streak (day 1=10, day 3=25, day 7=100, day 14=200, day 30=500)
+First project deploy (100 coins)
+Referral signup (50 coins to referrer)
+Referral first deploy (100 coins to referrer)
+Referral first payment (200 coins to referrer)
+Airdrops (admin-created, time-limited)
+Task completions (add email, connect Telegram, first ZIP deploy)
+Promo code redemption
+Bot marketplace review (+10 coins)
+Purchasing packages (KES → coins)
+Spending coins:
+
+Deploying a premium bot template (coinCost)
+Extra project slots
+Custom domain slot
+Priority support
+VIP badge
+Hourly project uptime (optional, configurable per tier)
+Transfer: User can send coins to another user with a note
+
+LIVE VIEW URL SYSTEM (Full Detail)
+// On every successful deploy:
+const liveUrl = `${process.env.BASE_URL}:${project.port}`;
+// OR if reverse proxy mode:
+const liveUrl = `https://${project.id}.${process.env.DOMAIN}`;
+// OR custom domain:
+const liveUrl = `https://${project.customDomain}`;
+await pool.query(
+  `UPDATE projects SET live_url=$1, last_deployed_at=now(), deploy_count=deploy_count+1 WHERE id=$2`,
+  [liveUrl, project.id]
+);
+// UI shows: green "Live" badge → clickable external link → opens in new tab
+// Also shown in: dashboard card, project overview tab, API response, Telegram notification
+ZIP / FOLDER DEPLOY (Full Detail)
+1. User hits "Upload" button → selects .zip or folder
+2. POST /projects/:id/upload  multipart/form-data
+3. Server: saves to bp_uploads/{id}-{ts}.zip
+4. Extracts adm-zip → bp_projects/{id}/  (clears old files first, keeps .env)
+5. Auto-detects runtime:
+   - package.json → Node.js → npm install (or bun install if bun.lockb)
+   - requirements.txt → Python → pip install
+   - go.mod → Go → go build
+   - Gemfile → Ruby → bundle install
+6. Copies .env.example → .env (if no .env exists)
+7. Runs build_command if set
+8. Starts project with start_command
+9. Assigns port, sets live_url
+10. Returns { success, liveUrl, logsUrl }
+11. Shows build SSE stream while installing
+IN-BROWSER CODE EDITOR (Full Detail)
+Monaco Editor integration:
+
+File tree sidebar with icons by extension
+Syntax highlighting for JS, TS, Python, Go, JSON, YAML, Dockerfile, .env, Markdown
+Multiple open tabs
+Ctrl+S to save → auto-restarts running project
+Find & Replace
+Auto-format on save (pret ...
