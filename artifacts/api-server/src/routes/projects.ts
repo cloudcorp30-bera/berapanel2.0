@@ -413,6 +413,86 @@ router.delete("/projects/:id/files", requireAuth, async (req, res): Promise<void
   res.json({ success: true });
 });
 
+// ─── GitHub Webhook Auto-Deploy ───────────────────────────────────────────────
+// POST /projects/:id/webhook  (called by GitHub on every push)
+router.post("/projects/:id/webhook", async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const secret = req.query.secret as string;
+
+  const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, id)).limit(1);
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+  if (project.webhookSecret && project.webhookSecret !== secret) {
+    res.status(403).json({ error: "Invalid webhook secret" }); return;
+  }
+
+  res.json({ success: true, message: "Redeploy triggered" });
+
+  // Async redeploy
+  const repoUrl = project.repoUrl;
+  const branch = project.branch || "main";
+  const port = project.port || 3001;
+  try {
+    const liveUrl = await deployFromGit({ ...project, repoUrl, branch, port, envVars: project.envVars as Record<string, string> }, project.userId);
+    await createNotification(project.userId, "🚀 Auto-Deploy Success", `${project.name} redeployed via GitHub push`, "success", "deploy");
+  } catch (err: any) {
+    await createNotification(project.userId, "❌ Auto-Deploy Failed", `${project.name}: ${err.message}`, "error", "deploy");
+  }
+});
+
+// POST /projects/:id/sleep  (pause project to save coins)
+router.post("/projects/:id/sleep", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const [project] = await db.select().from(projectsTable).where(
+    and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))
+  ).limit(1);
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+  await stopProcess(id);
+  await db.update(projectsTable).set({ status: "sleeping" }).where(eq(projectsTable.id, id));
+  await createNotification(req.user!.id, "💤 Project Sleeping", `${project.name} is sleeping. Coins paused.`, "info", "project");
+  res.json({ success: true, status: "sleeping" });
+});
+
+// POST /projects/:id/wake  (resume sleeping project)
+router.post("/projects/:id/wake", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const [project] = await db.select().from(projectsTable).where(
+    and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))
+  ).limit(1);
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+  await startProcess(id, project.port || 3001);
+  await db.update(projectsTable).set({ status: "running" }).where(eq(projectsTable.id, id));
+  await createNotification(req.user!.id, "☀️ Project Woke Up", `${project.name} is back online!`, "success", "project");
+  res.json({ success: true, status: "running" });
+});
+
+// PATCH /projects/:id/domain  (set custom domain)
+router.patch("/projects/:id/domain", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const { customDomain } = req.body;
+  const [project] = await db.select().from(projectsTable).where(
+    and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))
+  ).limit(1);
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+  await db.update(projectsTable).set({ customDomain: customDomain || null }).where(eq(projectsTable.id, id));
+  res.json({ success: true, customDomain });
+});
+
+// PATCH /projects/:id/settings  (update project settings)
+router.patch("/projects/:id/settings", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const [project] = await db.select().from(projectsTable).where(
+    and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))
+  ).limit(1);
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+  const allowed = ["name", "description", "autoRestart", "memoryLimitMb", "startCommand", "installCommand", "branch", "webhookSecret"];
+  const updates: Record<string, any> = {};
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) updates[key] = req.body[key];
+  }
+  const [updated] = await db.update(projectsTable).set(updates).where(eq(projectsTable.id, id)).returning();
+  res.json(mapProject(updated));
+});
+
 // GET /templates
 router.get("/templates", async (req, res): Promise<void> => {
   const templates = [
