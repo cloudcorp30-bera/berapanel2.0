@@ -5,6 +5,12 @@ dist
 tmp
 out-tsc
 *.tsbuildinfo
+
+# Exception: commit the pre-built berapanel frontend so production serves
+# the exact same design as dev without relying on a deployment build step
+!artifacts/berapanel/dist/
+!artifacts/berapanel/dist/public/
+!artifacts/berapanel/dist/public/**
 .expo
 .expo-shared
 
