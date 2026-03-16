@@ -12,8 +12,8 @@ import { formatTimeAgo } from "@/lib/utils";
 import Editor from "@monaco-editor/react";
 import { 
   Activity, Play, Square, RotateCw, TerminalSquare, FileCode, Settings, FileText, 
-  Rocket, Trash2, Save, Globe, Moon, Sun, Copy, Link, ExternalLink, Check,
-  GitBranch, Cpu, HardDrive, Clock, Shield, Bell
+  Rocket, Trash2, Save, Globe, Moon, Sun, Copy, Link as LinkIcon, ExternalLink, Check,
+  GitBranch, Clock, Shield, History, Wifi, WifiOff, AlertTriangle, CheckCircle, XCircle
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useQueryClient } from "@tanstack/react-query";
@@ -145,6 +145,7 @@ export function ProjectDetail() {
         {[
           { id: 'overview', label: 'Overview', icon: Activity },
           { id: 'logs', label: 'Logs', icon: FileText },
+          { id: 'history', label: 'Deploys', icon: History },
           { id: 'terminal', label: 'Terminal', icon: TerminalSquare },
           { id: 'env', label: 'Variables', icon: Settings },
           { id: 'editor', label: 'Code', icon: FileCode },
@@ -161,6 +162,7 @@ export function ProjectDetail() {
       <div className="flex-1 overflow-hidden flex flex-col">
         {activeTab === 'overview' && <OverviewTab project={project} />}
         {activeTab === 'logs' && <LogsTab projectId={project.id} />}
+        {activeTab === 'history' && <DeployHistoryTab projectId={project.id} />}
         {activeTab === 'terminal' && <TerminalTab projectId={project.id} />}
         {activeTab === 'env' && <EnvTab projectId={project.id} />}
         {activeTab === 'editor' && <div className="glass-panel p-8 rounded-2xl flex items-center justify-center text-muted-foreground">File editor available via Terminal tab.</div>}
@@ -547,6 +549,70 @@ function EnvTab({ projectId }: { projectId: string }) {
           options={{ minimap: { enabled: false }, fontSize: 13, fontFamily: 'JetBrains Mono', lineNumbers: 'on' }}
         />
       </div>
+    </div>
+  );
+}
+
+function DeployHistoryTab({ projectId }: { projectId: string }) {
+  const [history, setHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    try {
+      const data = await apiFetch(`/projects/${projectId}/deploy-history`);
+      setHistory(Array.isArray(data) ? data : []);
+    } catch { setHistory([]); } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, [projectId]);
+
+  const statusIcon = (s: string) => {
+    if (s === "success") return <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />;
+    if (s === "failed") return <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />;
+    return <Clock className="w-4 h-4 text-yellow-400 flex-shrink-0 animate-pulse" />;
+  };
+
+  if (loading) return <div className="flex items-center justify-center h-32 text-muted-foreground animate-pulse font-mono">Loading deploy history...</div>;
+
+  if (history.length === 0) return (
+    <div className="glass-panel rounded-2xl p-12 text-center">
+      <History className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+      <h3 className="font-bold mb-1">No deploys yet</h3>
+      <p className="text-sm text-muted-foreground">Hit Deploy Now to start your first deployment.</p>
+    </div>
+  );
+
+  return (
+    <div className="overflow-y-auto pb-8 space-y-3">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-bold">Deploy History <span className="text-muted-foreground font-normal text-sm ml-2">({history.length} total)</span></h3>
+        <button onClick={load} className="text-xs text-primary hover:text-accent flex items-center gap-1 transition-colors">
+          <RotateCw className="w-3 h-3" /> Refresh
+        </button>
+      </div>
+      {history.map((d, i) => (
+        <div key={d.id || i} className="glass-panel rounded-xl border border-border p-4 flex items-start gap-4">
+          <div className="mt-0.5">{statusIcon(d.status)}</div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-xs font-semibold capitalize px-2 py-0.5 rounded-full ${d.status === "success" ? "bg-green-500/10 text-green-400 border border-green-500/20" : d.status === "failed" ? "bg-red-500/10 text-red-400 border border-red-500/20" : "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"}`}>{d.status}</span>
+              {d.commitHash && <code className="text-[10px] text-muted-foreground bg-secondary/60 px-1.5 py-0.5 rounded font-mono">{d.commitHash.slice(0, 7)}</code>}
+              {d.commitMessage && <span className="text-xs text-muted-foreground truncate max-w-xs">{d.commitMessage}</span>}
+            </div>
+            <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground flex-wrap">
+              <span className="flex items-center gap-1"><Clock className="w-2.5 h-2.5" />{formatTimeAgo(d.deployedAt)}</span>
+              {d.duration && <span>{d.duration}s</span>}
+              {d.liveUrl && (
+                <a href={d.liveUrl.startsWith("http") ? d.liveUrl : `https://${d.liveUrl}`} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-green-400 hover:text-green-300 transition-colors">
+                  <Globe className="w-2.5 h-2.5" />{d.liveUrl}
+                </a>
+              )}
+            </div>
+            {d.error && <p className="text-xs text-red-400 mt-1 font-mono bg-red-500/5 rounded p-2 break-all">{d.error}</p>}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
