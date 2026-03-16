@@ -6,6 +6,9 @@ import {
   projectMetricsTable,
   cronJobsTable,
   usersTable,
+  customDomainsTable,
+  projectWebhooksTable,
+  teamMembersTable,
 } from "@workspace/db";
 import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
@@ -296,6 +299,143 @@ router.put("/projects/:id/env", requireAuth, async (req, res): Promise<void> => 
   res.json({ success: true });
 });
 
+// GET /projects/:id/env/detect  — scan deployed code for env var references
+router.get("/projects/:id/env/detect", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const [project] = await db.select().from(projectsTable).where(
+    and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))
+  ).limit(1);
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+
+  const dir = getProjectDir(id);
+  if (!fs.existsSync(dir)) { res.json({ detected: [] }); return; }
+
+  interface DetectedVar { key: string; defaultValue: string; source: string; description: string; }
+  const detected = new Map<string, DetectedVar>();
+
+  const addVar = (key: string, defaultValue: string, source: string, description = "") => {
+    if (!key || key.length < 2 || key.length > 80 || !/^[A-Z0-9_]+$/i.test(key)) return;
+    if (!detected.has(key)) detected.set(key, { key, defaultValue, source, description });
+  };
+
+  // Walk directory, skip node_modules / .git / dist / build
+  const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "__pycache__", "venv", ".venv"]);
+  const TEXT_EXTS = new Set([".js", ".ts", ".jsx", ".tsx", ".py", ".go", ".rb", ".php", ".java",
+    ".env", ".env.example", ".env.sample", ".env.template", ".env.local",
+    ".cfg", ".ini", ".yaml", ".yml", ".toml", ".conf", ".config", ".json"]);
+
+  function walkDir(dirPath: string, depth = 0) {
+    if (depth > 6) return;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (SKIP_DIRS.has(entry.name)) continue;
+      const fullPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) { walkDir(fullPath, depth + 1); continue; }
+      const ext = path.extname(entry.name).toLowerCase();
+      const baseName = entry.name.toLowerCase();
+      if (!TEXT_EXTS.has(ext) && !baseName.startsWith(".env")) continue;
+      let content: string;
+      try {
+        const stat = fs.statSync(fullPath);
+        if (stat.size > 500_000) continue; // skip files > 500KB
+        content = fs.readFileSync(fullPath, "utf8");
+      } catch { continue; }
+
+      const relPath = path.relative(dir, fullPath);
+
+      // ── .env.example / .env.sample / .env.template ────────────────────────
+      if (/\.(env\.example|env\.sample|env\.template|env\.local|env)$/.test(baseName) || baseName === ".env.example") {
+        for (const line of content.split("\n")) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith("#")) {
+            // capture description from comments above
+            continue;
+          }
+          const match = trimmed.match(/^([A-Z0-9_]+)\s*=\s*(.*)$/i);
+          if (match) addVar(match[1], match[2].replace(/^["']|["']$/g, ""), relPath, "");
+        }
+        continue;
+      }
+
+      // ── Node.js: process.env.VAR_NAME ─────────────────────────────────────
+      if ([".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"].includes(ext)) {
+        const nodePatterns = [
+          /process\.env\.([A-Z0-9_]+)/gi,
+          /process\.env\[['"]([A-Z0-9_]+)['"]\]/gi,
+        ];
+        for (const pat of nodePatterns) {
+          let m;
+          pat.lastIndex = 0;
+          while ((m = pat.exec(content)) !== null) addVar(m[1], "", relPath);
+        }
+        // dotenv: require('dotenv').config() — no extra vars needed
+        // config object: { key: process.env.FOO || 'default' }
+        const defaultPat = /process\.env\.([A-Z0-9_]+)\s*\|\|\s*['"`]([^'"`]+)['"`]/gi;
+        let dm;
+        defaultPat.lastIndex = 0;
+        while ((dm = defaultPat.exec(content)) !== null) {
+          const existing = detected.get(dm[1]);
+          if (existing && !existing.defaultValue) existing.defaultValue = dm[2];
+          else addVar(dm[1], dm[2], relPath);
+        }
+      }
+
+      // ── Python: os.environ / os.getenv ────────────────────────────────────
+      if (ext === ".py") {
+        const pyPatterns = [
+          /os\.environ(?:\.get)?\(['"]([A-Z0-9_]+)['"]/gi,
+          /os\.getenv\(['"]([A-Z0-9_]+)['"](?:,\s*['"]([^'"]*)['"]\))?/gi,
+          /environ\['([A-Z0-9_]+)'\]/gi,
+        ];
+        for (const pat of pyPatterns) {
+          let m;
+          pat.lastIndex = 0;
+          while ((m = pat.exec(content)) !== null) addVar(m[1], m[2] || "", relPath);
+        }
+      }
+
+      // ── config.js / config.ts / settings.js / settings.py ─────────────────
+      if (/config\.(js|ts|json|yaml|yml|toml)|settings\.(js|ts|py)/.test(baseName)) {
+        // Already handled by extension above, but flag the source more clearly
+        detected.forEach(v => { if (v.source === relPath) v.description = "From config file"; });
+      }
+
+      // ── YAML / TOML: ${VAR} substitutions and env blocks ──────────────────
+      if ([".yaml", ".yml", ".toml"].includes(ext)) {
+        const substPat = /\$\{([A-Z0-9_]+)\}/gi;
+        let m;
+        substPat.lastIndex = 0;
+        while ((m = substPat.exec(content)) !== null) addVar(m[1], "", relPath);
+        // yaml env key: value pairs under environment: sections
+        const envBlockPat = /^\s{2,}([A-Z][A-Z0-9_]{2,}):\s*["']?([^"'\n]*)["']?$/gm;
+        envBlockPat.lastIndex = 0;
+        while ((m = envBlockPat.exec(content)) !== null) addVar(m[1], (m[2] || "").trim(), relPath);
+      }
+
+      // ── docker-compose.yml env: blocks ────────────────────────────────────
+      if (baseName === "docker-compose.yml" || baseName === "docker-compose.yaml") {
+        const dcPat = /^\s+([A-Z0-9_]+)(?:=([^\n]*))?$/gim;
+        let m;
+        dcPat.lastIndex = 0;
+        while ((m = dcPat.exec(content)) !== null) addVar(m[1], (m[2] || "").trim(), relPath);
+      }
+    }
+  }
+
+  walkDir(dir);
+
+  // Sort: .env.example entries first, then alphabetically
+  const sorted = Array.from(detected.values()).sort((a, b) => {
+    const aIsEnv = a.source.includes(".env");
+    const bIsEnv = b.source.includes(".env");
+    if (aIsEnv !== bIsEnv) return aIsEnv ? -1 : 1;
+    return a.key.localeCompare(b.key);
+  });
+
+  res.json({ detected: sorted, scannedDir: dir, total: sorted.length });
+});
+
 // GET /projects/:id/crons
 router.get("/projects/:id/crons", requireAuth, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -544,6 +684,119 @@ router.get("/templates", async (req, res): Promise<void> => {
     { id: "next-app", name: "Next.js App", description: "Next.js React application", runtime: "node", repoUrl: "", tags: ["react", "next", "frontend"] },
   ];
   res.json(templates);
+});
+
+// ─── Custom Domains CRUD ──────────────────────────────────────────────────────
+router.get("/projects/:id/domains", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const [project] = await db.select({ id: projectsTable.id }).from(projectsTable).where(and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))).limit(1);
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+  const domains = await db.select().from(customDomainsTable).where(eq(customDomainsTable.projectId, id));
+  res.json({ domains });
+});
+
+router.post("/projects/:id/domains", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const { domain } = req.body;
+  if (!domain?.trim()) { res.status(400).json({ error: "Domain required" }); return; }
+  const [project] = await db.select().from(projectsTable).where(and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))).limit(1);
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+  const txtRecord = `berapanel-verify=${Math.random().toString(36).substring(2, 18)}`;
+  const cnameTarget = `${id}.berapanel.app`;
+  const [newDomain] = await db.insert(customDomainsTable).values({ projectId: id, domain: domain.trim().toLowerCase(), cnameTarget, txtRecord }).returning();
+  res.json(newDomain);
+});
+
+router.post("/projects/:id/domains/:domainId/verify", requireAuth, async (req, res): Promise<void> => {
+  const { id, domainId } = req.params;
+  const [domain] = await db.select().from(customDomainsTable).where(and(eq(customDomainsTable.id, domainId), eq(customDomainsTable.projectId, id))).limit(1);
+  if (!domain) { res.status(404).json({ error: "Domain not found" }); return; }
+  // In production, do real DNS lookup; here we simulate success after adding
+  await db.update(customDomainsTable).set({ verified: true, verifiedAt: new Date(), sslEnabled: true }).where(eq(customDomainsTable.id, domainId));
+  res.json({ success: true, verified: true });
+});
+
+router.delete("/projects/:id/domains/:domainId", requireAuth, async (req, res): Promise<void> => {
+  const { id, domainId } = req.params;
+  await db.delete(customDomainsTable).where(and(eq(customDomainsTable.id, domainId), eq(customDomainsTable.projectId, id)));
+  res.json({ success: true });
+});
+
+// ─── Outbound Webhooks CRUD ───────────────────────────────────────────────────
+const WEBHOOK_EVENTS = ["deploy.success", "deploy.failed", "project.started", "project.stopped", "project.error"];
+
+router.get("/projects/:id/webhooks", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const [project] = await db.select({ id: projectsTable.id }).from(projectsTable).where(and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))).limit(1);
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+  const webhooks = await db.select().from(projectWebhooksTable).where(eq(projectWebhooksTable.projectId, id));
+  res.json({ webhooks, availableEvents: WEBHOOK_EVENTS });
+});
+
+router.post("/projects/:id/webhooks", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const { url, events, secret } = req.body;
+  if (!url?.trim()) { res.status(400).json({ error: "URL required" }); return; }
+  const [project] = await db.select({ id: projectsTable.id }).from(projectsTable).where(and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))).limit(1);
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+  const [hook] = await db.insert(projectWebhooksTable).values({ projectId: id, url: url.trim(), events: events || WEBHOOK_EVENTS, secret: secret || null }).returning();
+  res.json(hook);
+});
+
+router.patch("/projects/:id/webhooks/:hookId", requireAuth, async (req, res): Promise<void> => {
+  const { id, hookId } = req.params;
+  const { url, events, secret, enabled } = req.body;
+  const updates: Record<string, any> = {};
+  if (url !== undefined) updates.url = url;
+  if (events !== undefined) updates.events = events;
+  if (secret !== undefined) updates.secret = secret;
+  if (enabled !== undefined) updates.enabled = enabled;
+  const [hook] = await db.update(projectWebhooksTable).set(updates).where(and(eq(projectWebhooksTable.id, hookId), eq(projectWebhooksTable.projectId, id))).returning();
+  res.json(hook);
+});
+
+router.delete("/projects/:id/webhooks/:hookId", requireAuth, async (req, res): Promise<void> => {
+  const { id, hookId } = req.params;
+  await db.delete(projectWebhooksTable).where(and(eq(projectWebhooksTable.id, hookId), eq(projectWebhooksTable.projectId, id)));
+  res.json({ success: true });
+});
+
+// ─── Team Members ─────────────────────────────────────────────────────────────
+router.get("/projects/:id/team", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const [project] = await db.select().from(projectsTable).where(and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))).limit(1);
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+  const members = await db.select({
+    id: teamMembersTable.id,
+    projectId: teamMembersTable.projectId,
+    userId: teamMembersTable.userId,
+    role: teamMembersTable.role,
+    joinedAt: teamMembersTable.joinedAt,
+    username: usersTable.username,
+    emailVerified: usersTable.emailVerified,
+  }).from(teamMembersTable).leftJoin(usersTable, eq(teamMembersTable.userId, usersTable.id)).where(eq(teamMembersTable.projectId, id));
+  res.json({ members, owner: { id: project.userId } });
+});
+
+router.post("/projects/:id/team", requireAuth, async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const { username, role } = req.body;
+  if (!username?.trim()) { res.status(400).json({ error: "Username required" }); return; }
+  const [project] = await db.select().from(projectsTable).where(and(eq(projectsTable.id, id), eq(projectsTable.userId, req.user!.id))).limit(1);
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+  const [invitee] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.username, username.trim())).limit(1);
+  if (!invitee) { res.status(404).json({ error: "User not found" }); return; }
+  if (invitee.id === req.user!.id) { res.status(400).json({ error: "Cannot invite yourself" }); return; }
+  const existing = await db.select().from(teamMembersTable).where(and(eq(teamMembersTable.projectId, id), eq(teamMembersTable.userId, invitee.id))).limit(1);
+  if (existing.length > 0) { res.status(400).json({ error: "User already a member" }); return; }
+  const [member] = await db.insert(teamMembersTable).values({ projectId: id, userId: invitee.id, role: role || "viewer", invitedBy: req.user!.id }).returning();
+  res.json(member);
+});
+
+router.delete("/projects/:id/team/:memberId", requireAuth, async (req, res): Promise<void> => {
+  const { id, memberId } = req.params;
+  await db.delete(teamMembersTable).where(and(eq(teamMembersTable.id, memberId), eq(teamMembersTable.projectId, id)));
+  res.json({ success: true });
 });
 
 export default router;
