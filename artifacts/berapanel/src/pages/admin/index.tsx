@@ -16,7 +16,8 @@ import {
   CheckCircle2, Gift, Bell, Settings, TrendingUp, Cpu, BarChart2,
   ClipboardList, Tag, AlertOctagon, RefreshCw, Database, Globe, Power,
   Lock, ChevronRight, MessageSquare, Send, ExternalLink, Eye,
-  Bot, Star, CheckSquare, XSquare, Clock, FolderOpen, ToggleLeft, ToggleRight
+  Bot, Star, CheckSquare, XSquare, Clock, FolderOpen, ToggleLeft, ToggleRight,
+  GitBranch, Save
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line } from "recharts";
@@ -873,46 +874,124 @@ function AnnouncementModal({ onClose, onRefresh }: { onClose: () => void; onRefr
 }
 
 // ─── Broadcast Modal ───────────────────────────────────────────────────────────
-function BroadcastModal({ onClose }: { onClose: () => void }) {
-  const notifMut = useAdminSendNotification();
-  const [form, setForm] = useState({ title: "", message: "", type: "info" });
-  const { toast } = useToast();
+const NOTIF_TEMPLATES = [
+  { label: "🔧 Maintenance", title: "Scheduled Maintenance", message: "We'll be performing scheduled maintenance. Expect brief downtime. Thank you for your patience!", type: "warning" },
+  { label: "🚀 New Feature", title: "New Feature Released!", message: "We just shipped something awesome. Check it out now and let us know what you think!", type: "success" },
+  { label: "🎁 Free Coins", title: "You've Got Free Coins!", message: "As a thank you for being part of BeraPanel, we've added bonus coins to your account. Enjoy!", type: "success" },
+  { label: "⚠️ Downtime", title: "Service Disruption", message: "We're experiencing an issue and our team is working on it. We'll update you as soon as it's resolved.", type: "error" },
+  { label: "💰 Promo", title: "Limited-Time Offer!", message: "Get double coins on your next purchase for the next 24 hours. Don't miss out!", type: "info" },
+  { label: "👋 Welcome", title: "Welcome to BeraPanel!", message: "Thanks for joining! Deploy your first project in minutes and explore the marketplace.", type: "info" },
+];
 
-  const handleSubmit = (e: React.FormEvent) => {
+function BroadcastModal({ onClose }: { onClose: () => void }) {
+  const { toast } = useToast();
+  const [form, setForm] = useState({ title: "", message: "", type: "info", target: "all" });
+  const [sending, setSending] = useState(false);
+  const [preview, setPreview] = useState(false);
+
+  const applyTemplate = (t: typeof NOTIF_TEMPLATES[0]) => {
+    setForm(p => ({ ...p, title: t.title, message: t.message, type: t.type }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    notifMut.mutate({ data: { ...form, broadcast: true } }, {
-      onSuccess: () => { toast({ title: "Broadcast sent to all users!" }); onClose(); },
-      onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" })
-    });
+    setSending(true);
+    try {
+      const res = await apiFetch("/admin/notifications/targeted", { method: "POST", body: JSON.stringify(form) });
+      toast({ title: `✅ Sent to ${res.sent} user${res.sent !== 1 ? "s" : ""}!`, description: form.title });
+      onClose();
+    } catch (err: any) {
+      toast({ title: "Error sending", description: err.message, variant: "destructive" });
+    } finally { setSending(false); }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="glass-panel rounded-2xl border border-border w-full max-w-md shadow-2xl">
-        <div className="p-5 border-b border-border flex items-center justify-between">
-          <h3 className="font-bold flex items-center gap-2"><Bell className="w-4 h-4 text-primary" /> Broadcast Notification</h3>
+      <div className="glass-panel rounded-2xl border border-border w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="p-5 border-b border-border flex items-center justify-between sticky top-0 bg-card z-10">
+          <h3 className="font-bold flex items-center gap-2"><Bell className="w-4 h-4 text-primary" /> Send Notification</h3>
           <button onClick={onClose}><X className="w-5 h-5 text-muted-foreground" /></button>
         </div>
-        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-4">
+        <div className="p-5 space-y-4">
+          {/* Templates */}
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Title</label>
-            <input required type="text" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
-              className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">Quick Templates</p>
+            <div className="flex flex-wrap gap-1.5">
+              {NOTIF_TEMPLATES.map(t => (
+                <button key={t.label} onClick={() => applyTemplate(t)}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-secondary border border-border hover:border-primary/40 hover:bg-primary/10 hover:text-primary transition-all">
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Message</label>
-            <textarea required rows={3} value={form.message} onChange={e => setForm(p => ({ ...p, message: e.target.value }))}
-              className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none" />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Type</label>
-            <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}
-              className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none">
-              {["info", "success", "warning", "error"].map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <Button type="submit" className="w-full" isLoading={notifMut.isPending}>Send to All Users</Button>
-        </form>
+
+          <form onSubmit={handleSubmit} className="space-y-3">
+            {/* Target */}
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Send To</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { value: "all", label: "All Users", icon: "👥" },
+                  { value: "premium", label: "Premium (>500 coins)", icon: "💎" },
+                  { value: "new", label: "New (last 7 days)", icon: "🌱" },
+                ].map(opt => (
+                  <button key={opt.value} type="button" onClick={() => setForm(p => ({ ...p, target: opt.value }))}
+                    className={`text-center p-2 rounded-lg border text-xs font-medium transition-all ${form.target === opt.value ? "border-primary/50 bg-primary/10 text-primary" : "border-border bg-secondary text-muted-foreground hover:border-border/80"}`}>
+                    <div>{opt.icon}</div>
+                    <div className="text-[10px] mt-0.5">{opt.label}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Type */}
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Type</label>
+              <div className="flex gap-2">
+                {[
+                  { v: "info", label: "ℹ️ Info", cls: "text-blue-400 border-blue-400/30 bg-blue-500/10" },
+                  { v: "success", label: "✅ Success", cls: "text-green-400 border-green-400/30 bg-green-500/10" },
+                  { v: "warning", label: "⚠️ Warning", cls: "text-yellow-400 border-yellow-400/30 bg-yellow-500/10" },
+                  { v: "error", label: "🚨 Alert", cls: "text-red-400 border-red-400/30 bg-red-500/10" },
+                ].map(opt => (
+                  <button key={opt.v} type="button" onClick={() => setForm(p => ({ ...p, type: opt.v }))}
+                    className={`flex-1 py-1.5 rounded-lg border text-[10px] font-bold transition-all ${form.type === opt.v ? opt.cls : "border-border bg-secondary text-muted-foreground"}`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Title</label>
+              <input required value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Notification title..."
+                className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Message</label>
+              <textarea required rows={3} value={form.message} onChange={e => setForm(p => ({ ...p, message: e.target.value }))} placeholder="Write your message..."
+                className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none" />
+            </div>
+
+            {/* Preview */}
+            {preview && form.title && (
+              <div className={`rounded-xl border p-3 text-sm ${form.type === "success" ? "border-green-500/30 bg-green-500/5" : form.type === "warning" ? "border-yellow-500/30 bg-yellow-500/5" : form.type === "error" ? "border-red-500/30 bg-red-500/5" : "border-blue-500/30 bg-blue-500/5"}`}>
+                <p className="font-bold text-xs mb-0.5">Preview</p>
+                <p className="font-semibold text-sm">{form.title}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{form.message}</p>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => setPreview(p => !p)}
+                className="px-3 py-2 rounded-lg border border-border bg-secondary text-xs hover:bg-secondary/80 transition-colors">
+                {preview ? "Hide" : "Preview"}
+              </button>
+              <Button type="submit" isLoading={sending} className="flex-1 gap-2 bg-gradient-to-r from-primary to-accent border-none text-white">
+                <Bell className="w-4 h-4" /> Send to {form.target === "all" ? "All Users" : form.target === "premium" ? "Premium Users" : "New Users"}
+              </Button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );
@@ -1045,89 +1124,256 @@ function PromoModal({ onClose, onRefresh }: { onClose: () => void; onRefresh: ()
 }
 
 // ─── Platform Settings Tab ─────────────────────────────────────────────────────
+type PlatformSection = "general" | "limits" | "economy" | "integrations" | "security" | "emergency";
+
 function PlatformTab() {
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [section, setSection] = useState<PlatformSection>("general");
   const { toast } = useToast();
 
   useEffect(() => {
     apiFetch("/admin/platform").then(d => { setSettings(d); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
-  const save = async () => {
-    setSaving(true);
+  const set = (k: string, v: any) => setSettings((p: any) => ({ ...p, [k]: v }));
+
+  const save = async (label: string) => {
+    setSaving(label);
     try {
       await apiFetch("/admin/platform", { method: "PUT", body: JSON.stringify(settings) });
-      toast({ title: "Platform settings saved!" });
+      toast({ title: `✅ ${label} saved!` });
     } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
-    setSaving(false);
+    setSaving(null);
   };
 
-  if (loading) return <div className="animate-pulse text-center text-muted-foreground py-12">Loading settings...</div>;
+  if (loading) return <div className="animate-pulse text-center text-muted-foreground py-20">Loading platform config...</div>;
+  if (!settings) return null;
+
+  const sections: { id: PlatformSection; label: string; icon: string }[] = [
+    { id: "general", label: "General", icon: "🌐" },
+    { id: "integrations", label: "Integrations", icon: "🔌" },
+    { id: "limits", label: "Limits", icon: "📊" },
+    { id: "economy", label: "Economy", icon: "💰" },
+    { id: "security", label: "Security", icon: "🔒" },
+    { id: "emergency", label: "Emergency", icon: "🚨" },
+  ];
+
+  const Field = ({ label, k, type = "text", placeholder = "", secret = false }: { label: string; k: string; type?: string; placeholder?: string; secret?: boolean }) => (
+    <div>
+      <label className="text-xs font-medium text-muted-foreground mb-1 block">{label}</label>
+      <input type={secret ? "password" : type} value={settings[k] ?? ""} onChange={e => set(k, type === "number" ? +e.target.value : e.target.value)}
+        placeholder={placeholder} autoComplete="off"
+        className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40" />
+    </div>
+  );
+
+  const Toggle = ({ label, k, desc }: { label: string; k: string; desc?: string }) => (
+    <label className="flex items-center justify-between cursor-pointer py-2">
+      <div>
+        <p className="text-sm font-medium">{label}</p>
+        {desc && <p className="text-xs text-muted-foreground">{desc}</p>}
+      </div>
+      <div className={cn("w-11 h-6 rounded-full transition-colors relative flex-shrink-0", settings[k] ? "bg-primary" : "bg-secondary border border-border")}
+        onClick={() => set(k, !settings[k])}>
+        <div className={cn("absolute top-1 w-4 h-4 rounded-full bg-white transition-transform shadow-sm", settings[k] ? "translate-x-6" : "translate-x-1")} />
+      </div>
+    </label>
+  );
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div className="glass-panel rounded-2xl border border-border p-6 flex flex-col gap-4">
-        <h3 className="font-bold flex items-center gap-2"><Globe className="w-4 h-4 text-primary" /> Platform Config</h3>
-        {settings && Object.entries(settings).map(([key, val]) => {
-          if (typeof val === "boolean") {
-            return (
-              <label key={key} className="flex items-center justify-between cursor-pointer">
-                <span className="text-sm font-medium capitalize">{key.replace(/([A-Z])/g, " $1")}</span>
-                <div className={cn("w-10 h-6 rounded-full transition-colors relative flex-shrink-0 cursor-pointer", val ? "bg-primary" : "bg-secondary border border-border")}
-                  onClick={() => setSettings((p: any) => ({ ...p, [key]: !p[key] }))}>
-                  <div className={cn("absolute top-1 w-4 h-4 rounded-full bg-white transition-transform shadow", val ? "translate-x-5" : "translate-x-1")} />
-                </div>
-              </label>
-            );
-          }
-          if (typeof val === "number" || typeof val === "string") {
-            return (
-              <div key={key}>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block capitalize">{key.replace(/([A-Z])/g, " $1")}</label>
-                <input type={typeof val === "number" ? "number" : "text"} value={val as any}
-                  onChange={e => setSettings((p: any) => ({ ...p, [key]: typeof val === "number" ? +e.target.value : e.target.value }))}
-                  className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
-              </div>
-            );
-          }
-          return null;
-        })}
-        <Button onClick={save} isLoading={saving} className="mt-2 w-full"><Settings className="w-4 h-4 mr-2" />Save Settings</Button>
+    <div className="space-y-4">
+      <div className="flex gap-1 bg-secondary/50 p-1 rounded-xl border border-border overflow-x-auto no-scrollbar">
+        {sections.map(s => (
+          <button key={s.id} onClick={() => setSection(s.id)}
+            className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all", section === s.id ? "bg-card text-foreground shadow-sm border border-border" : "text-muted-foreground hover:text-foreground")}>
+            {s.icon} {s.label}
+          </button>
+        ))}
       </div>
 
-      <div className="flex flex-col gap-4">
-        <div className="glass-panel rounded-2xl border border-red-500/30 bg-red-500/5 p-6">
-          <h3 className="font-bold flex items-center gap-2 text-red-400 mb-4"><AlertOctagon className="w-4 h-4" /> Emergency Controls</h3>
-          <div className="flex flex-col gap-3">
-            <Button onClick={async () => { if (!confirm("Stop ALL running projects?")) return; try { await apiFetch("/admin/emergency/stop-all", { method: "POST" }); toast({ title: "All projects stopped" }); } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); } }}
-              className="w-full bg-red-600 hover:bg-red-500 border-none text-white gap-2">
-              <Power className="w-4 h-4" /> Stop All Projects
-            </Button>
-            <Button onClick={async () => { if (!confirm("Restart ALL running projects?")) return; try { await apiFetch("/admin/emergency/restart-all", { method: "POST" }); toast({ title: "All projects restarting..." }); } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); } }}
-              variant="outline" className="w-full gap-2 hover:text-orange-400 hover:border-orange-400/30">
-              <RefreshCw className="w-4 h-4" /> Restart All Projects
-            </Button>
+      {section === "general" && (
+        <div className="glass-panel rounded-2xl border border-border p-6 space-y-4">
+          <h3 className="font-bold flex items-center gap-2"><Globe className="w-4 h-4 text-primary" /> General Settings</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Field label="Platform Name" k="platformName" placeholder="BeraPanel" />
+            <Field label="Support Email" k="supportEmail" placeholder="support@yourdomain.com" />
+            <Field label="Logo URL" k="logoUrl" placeholder="https://..." />
+            <Field label="Favicon URL" k="faviconUrl" placeholder="https://..." />
+            <Field label="Maintenance Message" k="maintenanceMessage" placeholder="We'll be back soon!" />
           </div>
+          <div className="divide-y divide-border/40">
+            <Toggle label="Maintenance Mode" k="maintenanceMode" desc="Shows maintenance page to all non-admin users" />
+            <Toggle label="Registration Open" k="registrationOpen" desc="Allow new users to register" />
+            <Toggle label="Require Email Verification" k="requireEmailVerification" desc="New users must verify their email before accessing the platform" />
+          </div>
+          <Button onClick={() => save("General Settings")} isLoading={saving === "General Settings"} className="w-full gap-2">
+            <Save className="w-4 h-4" /> Save General Settings
+          </Button>
         </div>
+      )}
 
-        <div className="glass-panel rounded-2xl border border-border p-6">
-          <h3 className="font-bold flex items-center gap-2 mb-4"><Database className="w-4 h-4 text-accent" /> Referral Config</h3>
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs text-muted-foreground">Referral Bonus (coins)</label>
-              <input type="number" placeholder="e.g. 50" className="w-full mt-1 bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none" id="ref-bonus" />
+      {section === "integrations" && (
+        <div className="space-y-4">
+          {/* Telegram */}
+          <div className="glass-panel rounded-2xl border border-border p-6 space-y-4">
+            <h3 className="font-bold flex items-center gap-2 text-blue-400">
+              <span className="text-lg">✈️</span> Telegram Bot
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="Bot Token" k="telegramBotToken" placeholder="123456789:AAF..." secret />
+              <Field label="Bot Username" k="telegramBotUsername" placeholder="@YourBotName" />
+              <Field label="Admin Chat ID" k="telegramAdminChatId" placeholder="Your personal chat ID for alerts" />
             </div>
-            <Button onClick={async () => {
-              const bonus = parseInt((document.getElementById("ref-bonus") as HTMLInputElement).value);
-              if (!bonus) return;
-              try { await apiFetch("/admin/referrals/config", { method: "PUT", body: JSON.stringify({ referralBonus: bonus }) }); toast({ title: "Referral config updated" }); }
-              catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
-            }} className="w-full" variant="outline">Update Referral Bonus</Button>
+            <div className="divide-y divide-border/40">
+              <Toggle label="Notify on Deployments" k="telegramNotifyDeploys" desc="Send Telegram message when users deploy projects" />
+              <Toggle label="Notify on New Signups" k="telegramNotifySignups" desc="Get notified when new users register" />
+              <Toggle label="Notify on Payments" k="telegramNotifyPayments" desc="Get notified when users purchase coins" />
+            </div>
+            <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-3 text-xs text-blue-300 space-y-1">
+              <p className="font-semibold">Setup: Create a bot via @BotFather → copy the token above → get your chat ID from @userinfobot</p>
+            </div>
+            <Button onClick={() => save("Telegram Config")} isLoading={saving === "Telegram Config"} className="gap-2 bg-blue-600 hover:bg-blue-500 border-none text-white">
+              Save Telegram Config
+            </Button>
+          </div>
+
+          {/* Discord */}
+          <div className="glass-panel rounded-2xl border border-border p-6 space-y-4">
+            <h3 className="font-bold flex items-center gap-2 text-indigo-400">
+              <span className="text-lg">🎮</span> Discord Webhook
+            </h3>
+            <Field label="Webhook URL" k="discordWebhookUrl" placeholder="https://discord.com/api/webhooks/..." />
+            <div className="divide-y divide-border/40">
+              <Toggle label="Notify on Deployments" k="discordNotifyDeploys" />
+              <Toggle label="Notify on Signups" k="discordNotifySignups" />
+            </div>
+            <Button onClick={() => save("Discord Config")} isLoading={saving === "Discord Config"} className="gap-2 bg-indigo-600 hover:bg-indigo-500 border-none text-white">
+              Save Discord Config
+            </Button>
+          </div>
+
+          {/* SMTP */}
+          <div className="glass-panel rounded-2xl border border-border p-6 space-y-4">
+            <h3 className="font-bold flex items-center gap-2 text-yellow-400">
+              <span className="text-lg">📧</span> Email / SMTP
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="SMTP Host" k="smtpHost" placeholder="smtp.gmail.com" />
+              <Field label="SMTP Port" k="smtpPort" type="number" placeholder="587" />
+              <Field label="SMTP Username" k="smtpUser" placeholder="you@gmail.com" />
+              <Field label="SMTP Password" k="smtpPass" placeholder="App password" secret />
+              <Field label="From Address" k="smtpFrom" placeholder="noreply@yourdomain.com" />
+            </div>
+            <Toggle label="Use SSL/TLS" k="smtpSsl" desc="Enable for port 465, leave off for 587 (STARTTLS)" />
+            <Button onClick={() => save("SMTP Config")} isLoading={saving === "SMTP Config"} className="gap-2 bg-yellow-600 hover:bg-yellow-500 border-none text-white">
+              Save SMTP Config
+            </Button>
+          </div>
+
+          {/* GitHub */}
+          <div className="glass-panel rounded-2xl border border-border p-6 space-y-4">
+            <h3 className="font-bold flex items-center gap-2"><GitBranch className="w-4 h-4 text-foreground" /> GitHub Integration</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="GitHub App ID" k="githubAppId" placeholder="12345" />
+              <Field label="Webhook Secret" k="githubWebhookSecret" placeholder="Shared webhook secret" secret />
+            </div>
+            <Button onClick={() => save("GitHub Config")} isLoading={saving === "GitHub Config"} variant="outline" className="gap-2">
+              Save GitHub Config
+            </Button>
+          </div>
+
+          {/* PayHero */}
+          <div className="glass-panel rounded-2xl border border-border p-6 space-y-4">
+            <h3 className="font-bold flex items-center gap-2 text-green-400">
+              <span className="text-lg">💳</span> PayHero (M-Pesa)
+            </h3>
+            <Field label="PayHero Channel ID" k="payheroChannelId" placeholder="3763" />
+            <div className="bg-green-500/5 border border-green-500/20 rounded-xl p-3 text-xs text-green-300">
+              <p>PayHero Auth key is stored as a server secret (PAYHERO_AUTH environment variable). Only update Channel ID here.</p>
+            </div>
+            <Button onClick={() => save("PayHero Config")} isLoading={saving === "PayHero Config"} className="gap-2 bg-green-600 hover:bg-green-500 border-none text-white">
+              Save PayHero Config
+            </Button>
           </div>
         </div>
-      </div>
+      )}
+
+      {section === "limits" && (
+        <div className="glass-panel rounded-2xl border border-border p-6 space-y-4">
+          <h3 className="font-bold flex items-center gap-2"><Server className="w-4 h-4 text-accent" /> Resource Limits</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Field label="Max Projects (Free)" k="maxProjectsFree" type="number" />
+            <Field label="Max Projects (Pro)" k="maxProjectsPro" type="number" />
+            <Field label="Max Domains Per Project" k="maxDomainsPerProject" type="number" />
+            <Field label="Max Team Members Per Project" k="maxTeamMembersPerProject" type="number" />
+            <Field label="Max Log Lines Shown" k="maxLogLines" type="number" />
+          </div>
+          <Button onClick={() => save("Limits")} isLoading={saving === "Limits"} className="w-full gap-2">
+            <Save className="w-4 h-4" /> Save Limits
+          </Button>
+        </div>
+      )}
+
+      {section === "economy" && (
+        <div className="glass-panel rounded-2xl border border-border p-6 space-y-4">
+          <h3 className="font-bold flex items-center gap-2"><Coins className="w-4 h-4 text-yellow-400" /> Economy Settings</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Field label="Default Coins on Signup" k="defaultCoinsOnSignup" type="number" />
+            <Field label="Coin Value (KSH)" k="coinValueKsh" type="number" />
+            <Field label="Referral Bonus (coins)" k="referralBonus" type="number" />
+          </div>
+          <div className="divide-y divide-border/40">
+            <Toggle label="Enable Payments" k="enablePayments" desc="Allow users to buy coins via M-Pesa" />
+            <Toggle label="Enable Referrals" k="enableReferrals" desc="Users can earn coins by inviting friends" />
+            <Toggle label="Enable Airdrops" k="enableAirdrops" desc="Allow admins to create and users to claim airdrops" />
+            <Toggle label="Enable Bot Marketplace" k="enableBotMarket" desc="Show the bot marketplace to users" />
+          </div>
+          <Button onClick={() => save("Economy")} isLoading={saving === "Economy"} className="w-full gap-2 bg-gradient-to-r from-yellow-600 to-orange-500 border-none text-white">
+            <Coins className="w-4 h-4" /> Save Economy Settings
+          </Button>
+        </div>
+      )}
+
+      {section === "security" && (
+        <div className="glass-panel rounded-2xl border border-border p-6 space-y-4">
+          <h3 className="font-bold flex items-center gap-2"><Shield className="w-4 h-4 text-green-400" /> Security Settings</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Field label="JWT Expires In" k="jwtExpiresIn" placeholder="7d" />
+            <Field label="Max Login Attempts" k="maxLoginAttempts" type="number" />
+            <Field label="Session Timeout (minutes)" k="sessionTimeoutMinutes" type="number" />
+            <Field label="Allowed IP Whitelist (comma-separated)" k="allowedIpWhitelist" placeholder="Leave blank to allow all" />
+          </div>
+          <Toggle label="Enable Two-Factor Auth (2FA)" k="enableTwoFactor" desc="Require TOTP 2FA for admin accounts" />
+          <Button onClick={() => save("Security")} isLoading={saving === "Security"} className="w-full gap-2 bg-green-600 hover:bg-green-500 border-none text-white">
+            <Shield className="w-4 h-4" /> Save Security Settings
+          </Button>
+        </div>
+      )}
+
+      {section === "emergency" && (
+        <div className="space-y-4">
+          <div className="glass-panel rounded-2xl border border-red-500/30 bg-red-500/5 p-6 space-y-4">
+            <h3 className="font-bold flex items-center gap-2 text-red-400"><AlertOctagon className="w-4 h-4" /> Emergency Controls</h3>
+            <p className="text-sm text-muted-foreground">These actions are immediate and affect all users. Use with caution.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {[
+                { label: "🛑 Stop All Projects", desc: "Immediately stop every running project", action: async () => { if (!confirm("Stop ALL projects?")) return; await apiFetch("/admin/emergency/stop-all", { method: "POST" }); toast({ title: "All projects stopped" }); }, danger: true },
+                { label: "🔄 Restart All Projects", desc: "Restart every running project", action: async () => { if (!confirm("Restart ALL projects?")) return; await apiFetch("/admin/emergency/restart-all", { method: "POST" }); toast({ title: "Restarting all projects..." }); }, danger: false },
+                { label: "🔒 Lock Platform", desc: "Enable maintenance mode instantly", action: async () => { set("maintenanceMode", true); await apiFetch("/admin/platform", { method: "PUT", body: JSON.stringify({ ...settings, maintenanceMode: true }) }); toast({ title: "Platform locked — maintenance mode ON" }); }, danger: true },
+                { label: "🔓 Unlock Platform", desc: "Disable maintenance mode", action: async () => { set("maintenanceMode", false); await apiFetch("/admin/platform", { method: "PUT", body: JSON.stringify({ ...settings, maintenanceMode: false }) }); toast({ title: "Platform unlocked" }); }, danger: false },
+              ].map(({ label, desc, action, danger }) => (
+                <button key={label} onClick={action}
+                  className={`p-4 rounded-xl border text-left transition-all hover:scale-[1.01] active:scale-[0.99] ${danger ? "border-red-500/30 bg-red-500/5 hover:bg-red-500/10" : "border-border bg-secondary hover:bg-secondary/80"}`}>
+                  <p className="font-bold text-sm">{label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1440,7 +1686,7 @@ function AdminProjectsTab() {
 }
 
 // ─── Main Admin Dashboard ─────────────────────────────────────────────────────
-type AdminTab = "overview" | "users" | "projects" | "bots" | "badge-requests" | "packages" | "airdrops" | "announcements" | "tickets" | "economy" | "analytics" | "audit" | "platform" | "feature-flags" | "health" | "referrals";
+type AdminTab = "overview" | "users" | "projects" | "bots" | "badge-requests" | "packages" | "airdrops" | "announcements" | "tickets" | "economy" | "analytics" | "audit" | "platform" | "feature-flags" | "health" | "referrals" | "superadmin";
 
 export function AdminDashboard() {
   const [tab, setTab] = useState<AdminTab>("overview");
@@ -1481,6 +1727,7 @@ export function AdminDashboard() {
     { id: "feature-flags", label: "Features", icon: Zap },
     { id: "health", label: "Health", icon: Cpu },
     { id: "referrals", label: "Referrals", icon: Users },
+    { id: "superadmin", label: "⚡ Superadmin", icon: Crown },
   ];
 
   return (
@@ -1741,6 +1988,7 @@ export function AdminDashboard() {
       {tab === "feature-flags" && <FeatureFlagsTab />}
       {tab === "health" && <SystemHealthTab />}
       {tab === "referrals" && <ReferralConfigTab />}
+      {tab === "superadmin" && <SuperadminTab />}
     </div>
   );
 }
@@ -1926,6 +2174,230 @@ function ReferralConfigTab() {
           <Button type="submit" isLoading={saving} className="w-full bg-gradient-to-r from-primary to-accent border-none text-white">Save Referral Config</Button>
         </form>
       )}
+    </div>
+  );
+}
+
+// ─── Superadmin Tab ───────────────────────────────────────────────────────────
+function SuperadminTab() {
+  const { toast } = useToast();
+  const [myBalance, setMyBalance] = useState<number | null>(null);
+  const [selfAmount, setSelfAmount] = useState(500);
+  const [selfReason, setSelfReason] = useState("Superadmin grant");
+  const [givingToSelf, setGivingToSelf] = useState(false);
+  const [giveUser, setGiveUser] = useState({ username: "", amount: 500, reason: "Admin gift" });
+  const [givingToUser, setGivingToUser] = useState(false);
+  const [massAmount, setMassAmount] = useState(100);
+  const [massReason, setMassReason] = useState("Platform gift");
+  const [massSending, setMassSending] = useState(false);
+  const [quickNotif, setQuickNotif] = useState({ title: "", message: "", type: "info", target: "all" });
+  const [sendingNotif, setSendingNotif] = useState(false);
+
+  useEffect(() => {
+    apiFetch("/auth/me").then((u: any) => setMyBalance(u.coins));
+  }, []);
+
+  const giveSelf = async () => {
+    if (!selfAmount) return;
+    setGivingToSelf(true);
+    try {
+      const r = await apiFetch("/admin/coins/give-self", { method: "POST", body: JSON.stringify({ amount: selfAmount, reason: selfReason }) });
+      setMyBalance(r.newBalance);
+      toast({ title: `✅ +${selfAmount} coins added to your account!`, description: `New balance: ${r.newBalance?.toLocaleString()} coins` });
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+    setGivingToSelf(false);
+  };
+
+  const giveToUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!giveUser.username || !giveUser.amount) return;
+    setGivingToUser(true);
+    try {
+      const r = await apiFetch("/admin/coins/give", { method: "POST", body: JSON.stringify(giveUser) });
+      toast({ title: `✅ Sent ${giveUser.amount} coins to @${r.username}`, description: `Their new balance: ${r.newBalance?.toLocaleString()} coins` });
+      setGiveUser(p => ({ ...p, username: "" }));
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+    setGivingToUser(false);
+  };
+
+  const sendMass = async () => {
+    if (!massAmount) return;
+    if (!confirm(`Send ${massAmount} coins to ALL active users?`)) return;
+    setMassSending(true);
+    try {
+      const r = await apiFetch("/admin/coins/bulk", { method: "POST", body: JSON.stringify({ amount: massAmount, reason: massReason }) });
+      toast({ title: `✅ Sent ${massAmount} coins to ${r.affectedUsers} users!` });
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+    setMassSending(false);
+  };
+
+  const sendQuickNotif = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSendingNotif(true);
+    try {
+      const r = await apiFetch("/admin/notifications/targeted", { method: "POST", body: JSON.stringify(quickNotif) });
+      toast({ title: `✅ Sent to ${r.sent} user${r.sent !== 1 ? "s" : ""}` });
+      setQuickNotif(p => ({ ...p, title: "", message: "" }));
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+    setSendingNotif(false);
+  };
+
+  const PRESETS = [100, 500, 1000, 5000, 10000];
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="glass-panel rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/5 to-primary/5 p-6 flex items-center gap-4">
+        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-yellow-500 to-orange-500 flex items-center justify-center shadow-lg shadow-yellow-500/20 flex-shrink-0">
+          <Crown className="w-8 h-8 text-white" />
+        </div>
+        <div className="flex-1">
+          <h2 className="text-xl font-display font-bold">Superadmin Controls</h2>
+          <p className="text-sm text-muted-foreground">You built this platform. You have full authority — no restrictions.</p>
+        </div>
+        {myBalance !== null && (
+          <div className="text-right flex-shrink-0">
+            <p className="text-xs text-muted-foreground">Your Balance</p>
+            <p className="text-2xl font-mono font-bold text-yellow-400">{myBalance.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground">coins</p>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Give Myself Coins */}
+        <div className="glass-panel rounded-2xl border border-yellow-500/30 bg-yellow-500/5 p-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center">
+              <Coins className="w-4 h-4 text-yellow-400" />
+            </div>
+            <h3 className="font-bold">Give Myself Coins</h3>
+          </div>
+          <p className="text-xs text-muted-foreground">Instantly add coins to your own account. No airdrop needed.</p>
+          <div className="flex flex-wrap gap-2">
+            {PRESETS.map(p => (
+              <button key={p} onClick={() => setSelfAmount(p)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${selfAmount === p ? "bg-yellow-500 border-yellow-500 text-black" : "border-border bg-secondary text-muted-foreground hover:text-foreground hover:border-yellow-500/40"}`}>
+                +{p.toLocaleString()}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input type="number" min={1} value={selfAmount} onChange={e => setSelfAmount(+e.target.value)}
+              className="flex-1 px-3 py-2 bg-secondary border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-yellow-500/40" />
+            <span className="flex items-center text-xs text-muted-foreground px-1">coins</span>
+          </div>
+          <input value={selfReason} onChange={e => setSelfReason(e.target.value)} placeholder="Reason (optional)"
+            className="w-full px-3 py-2 bg-secondary border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500/40" />
+          <Button onClick={giveSelf} isLoading={givingToSelf}
+            className="w-full bg-gradient-to-r from-yellow-600 to-orange-500 border-none text-white font-bold gap-2">
+            <Coins className="w-4 h-4" /> Add {selfAmount.toLocaleString()} Coins to My Account
+          </Button>
+        </div>
+
+        {/* Give Coins to User */}
+        <div className="glass-panel rounded-2xl border border-border p-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Users className="w-4 h-4 text-primary" />
+            </div>
+            <h3 className="font-bold">Give Coins to Any User</h3>
+          </div>
+          <p className="text-xs text-muted-foreground">Send coins directly to any user by their username.</p>
+          <form onSubmit={giveToUser} className="space-y-3">
+            <input required value={giveUser.username} onChange={e => setGiveUser(p => ({ ...p, username: e.target.value }))} placeholder="Username (e.g. john_doe)"
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            <div className="flex gap-2">
+              <input required type="number" min={1} value={giveUser.amount} onChange={e => setGiveUser(p => ({ ...p, amount: +e.target.value }))}
+                className="flex-1 px-3 py-2 bg-secondary border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40" />
+              <span className="flex items-center text-xs text-muted-foreground px-1">coins</span>
+            </div>
+            <input value={giveUser.reason} onChange={e => setGiveUser(p => ({ ...p, reason: e.target.value }))} placeholder="Reason"
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            <Button type="submit" isLoading={givingToUser} className="w-full gap-2">
+              <Send className="w-4 h-4" /> Send Coins to User
+            </Button>
+          </form>
+        </div>
+
+        {/* Mass Distribution */}
+        <div className="glass-panel rounded-2xl border border-green-500/30 bg-green-500/5 p-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center">
+              <Gift className="w-4 h-4 text-green-400" />
+            </div>
+            <h3 className="font-bold">Mass Coin Distribution</h3>
+          </div>
+          <p className="text-xs text-muted-foreground">Give coins to every active user simultaneously — great for platform rewards or celebrations.</p>
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <input type="number" min={1} value={massAmount} onChange={e => setMassAmount(+e.target.value)}
+                className="flex-1 px-3 py-2 bg-secondary border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-500/40" />
+              <span className="flex items-center text-xs text-muted-foreground px-1">coins per user</span>
+            </div>
+            <input value={massReason} onChange={e => setMassReason(e.target.value)} placeholder="Reason shown in transaction history"
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500/40" />
+          </div>
+          <Button onClick={sendMass} isLoading={massSending}
+            className="w-full bg-gradient-to-r from-green-600 to-emerald-500 border-none text-white font-bold gap-2">
+            <Gift className="w-4 h-4" /> Distribute {massAmount} Coins to All Users
+          </Button>
+        </div>
+
+        {/* Quick Notification */}
+        <div className="glass-panel rounded-2xl border border-border p-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+              <Bell className="w-4 h-4 text-blue-400" />
+            </div>
+            <h3 className="font-bold">Quick Notification</h3>
+          </div>
+          <p className="text-xs text-muted-foreground">Send an in-app notification instantly to any group of users.</p>
+          <form onSubmit={sendQuickNotif} className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { v: "all", label: "👥 All Users" },
+                { v: "premium", label: "💎 Premium" },
+                { v: "new", label: "🌱 New Users" },
+              ].map(opt => (
+                <button key={opt.v} type="button" onClick={() => setQuickNotif(p => ({ ...p, target: opt.v }))}
+                  className={`py-2 rounded-lg border text-xs font-medium transition-all ${quickNotif.target === opt.v ? "border-primary/50 bg-primary/10 text-primary" : "border-border bg-secondary text-muted-foreground"}`}>
+                  {opt.label}
+                </button>
+              ))}
+              <select value={quickNotif.type} onChange={e => setQuickNotif(p => ({ ...p, type: e.target.value }))}
+                className="col-span-1 px-2 py-2 bg-secondary border border-border rounded-lg text-xs focus:outline-none">
+                {["info", "success", "warning", "error"].map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <input required value={quickNotif.title} onChange={e => setQuickNotif(p => ({ ...p, title: e.target.value }))} placeholder="Notification title"
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            <textarea required rows={2} value={quickNotif.message} onChange={e => setQuickNotif(p => ({ ...p, message: e.target.value }))} placeholder="Your message..."
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            <Button type="submit" isLoading={sendingNotif} className="w-full gap-2 bg-blue-600 hover:bg-blue-500 border-none text-white">
+              <Bell className="w-4 h-4" /> Send Notification
+            </Button>
+          </form>
+        </div>
+      </div>
+
+      {/* Quick Links */}
+      <div className="glass-panel rounded-2xl border border-border p-5">
+        <h3 className="font-bold text-sm mb-3">Other Admin Quick Actions</h3>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { label: "Create Airdrop", desc: "Go to Airdrops tab", action: () => { document.querySelector('[data-tab="airdrops"]')?.dispatchEvent(new MouseEvent("click")); } },
+            { label: "Manage Packages", desc: "Go to Packages tab" },
+            { label: "View All Users", desc: "Go to Users tab" },
+            { label: "Broadcast Message", desc: "Opens broadcast modal" },
+          ].map(item => (
+            <div key={item.label} className="px-3 py-2 bg-secondary rounded-lg border border-border text-sm">
+              <p className="font-medium text-xs">{item.label}</p>
+              <p className="text-[10px] text-muted-foreground">{item.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
