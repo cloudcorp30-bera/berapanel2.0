@@ -16,6 +16,7 @@ import {
   promoCodesTable,
   referralConfigTable,
   badgeRequestsTable,
+  featureFlagsTable,
 } from "@workspace/db";
 import { eq, desc, and, ilike, sql, gte, count as countFn, or } from "drizzle-orm";
 import { requireAuth, requireAdmin } from "../lib/auth.js";
@@ -559,6 +560,88 @@ router.post("/badge-requests/:id/deny", async (req, res): Promise<void> => {
   await db.update(badgeRequestsTable).set({ status: "denied", adminNote, reviewedBy: req.user!.id, reviewedAt: new Date() }).where(eq(badgeRequestsTable.id, id));
   await createNotification(req2.userId, "❌ Verification Badge Denied", adminNote ? `Your badge request was denied: ${adminNote}` : "Your verification badge request was not approved at this time.", "error", "system");
   res.json({ success: true });
+});
+
+// ─── Feature Flags ────────────────────────────────────────────────────────────
+const DEFAULT_FLAGS = [
+  { key: "chat", label: "Developer Chat", description: "Enable community chat room for all users" },
+  { key: "marketplace", label: "Bot Marketplace", description: "Allow users to browse and install bot templates" },
+  { key: "referrals", label: "Referral System", description: "Enable referral links and rewards" },
+  { key: "airdrops", label: "Coin Airdrops", description: "Allow users to claim coin airdrops" },
+  { key: "promo_codes", label: "Promo Codes", description: "Allow users to redeem promotional codes" },
+  { key: "badge_requests", label: "Badge Requests", description: "Allow users to request verification badges" },
+  { key: "custom_domains", label: "Custom Domains", description: "Allow users to add custom domains to projects" },
+  { key: "team_collaboration", label: "Team Collaboration", description: "Allow users to invite team members to projects" },
+  { key: "outbound_webhooks", label: "Outbound Webhooks", description: "Allow users to configure webhook notifications" },
+  { key: "support_tickets", label: "Support Tickets", description: "Enable support ticket system" },
+  { key: "api_keys", label: "API Keys", description: "Allow external developer API access" },
+  { key: "maintenance_mode", label: "Maintenance Mode", description: "Show maintenance page to all non-admin users", enabled: false },
+];
+
+router.get("/feature-flags", async (req, res): Promise<void> => {
+  const existing = await db.select().from(featureFlagsTable);
+  const existingKeys = new Set(existing.map(f => f.key));
+  for (const def of DEFAULT_FLAGS) {
+    if (!existingKeys.has(def.key)) {
+      await db.insert(featureFlagsTable).values({ key: def.key, label: def.label, description: def.description, enabled: (def as any).enabled !== false }).onConflictDoNothing();
+    }
+  }
+  const flags = await db.select().from(featureFlagsTable).orderBy(featureFlagsTable.key);
+  res.json({ flags });
+});
+
+router.put("/feature-flags/:key", async (req, res): Promise<void> => {
+  const { key } = req.params;
+  const { enabled } = req.body;
+  await db.insert(featureFlagsTable)
+    .values({ key, label: key, enabled: !!enabled, updatedBy: req.user?.id })
+    .onConflictDoUpdate({ target: featureFlagsTable.key, set: { enabled: !!enabled, updatedBy: req.user?.id, updatedAt: new Date() } });
+  res.json({ success: true, key, enabled: !!enabled });
+});
+
+// ─── System Health ────────────────────────────────────────────────────────────
+router.get("/health", async (req, res): Promise<void> => {
+  try {
+    const [cpu, mem, disk, load, osInfo] = await Promise.all([
+      si.currentLoad(),
+      si.mem(),
+      si.fsSize(),
+      si.currentLoad(),
+      si.osInfo(),
+    ]);
+    const mainDisk = disk.find(d => d.mount === "/" || d.mount === "C:") || disk[0];
+    const [totalUsers] = await db.select({ count: countFn() }).from(usersTable);
+    const [runningProjects] = await db.select({ count: countFn() }).from(projectsTable).where(eq(projectsTable.status, "running"));
+    res.json({
+      cpu: { load: cpu.currentLoad?.toFixed(1) || 0, cores: cpu.cpus?.length || 1 },
+      memory: {
+        total: Math.round(mem.total / 1024 / 1024),
+        used: Math.round(mem.used / 1024 / 1024),
+        free: Math.round(mem.available / 1024 / 1024),
+        percent: Math.round(mem.used / mem.total * 100),
+      },
+      disk: mainDisk ? {
+        total: Math.round(mainDisk.size / 1024 / 1024 / 1024),
+        used: Math.round(mainDisk.used / 1024 / 1024 / 1024),
+        percent: Math.round(mainDisk.use),
+      } : null,
+      platform: { os: osInfo.distro, version: osInfo.release },
+      stats: { totalUsers: totalUsers.count, runningProjects: runningProjects.count },
+      uptime: process.uptime(),
+      nodeVersion: process.version,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Referral Config ──────────────────────────────────────────────────────────
+router.get("/referrals/config", async (req, res): Promise<void> => {
+  const configs = await db.select().from(referralConfigTable);
+  const obj: Record<string, any> = {};
+  for (const c of configs) obj[c.key] = c.value;
+  res.json({ signupCoins: obj.signup_coins ?? 50, firstDeployCoins: obj.first_deploy_coins ?? 100, firstPaymentCoins: obj.first_payment_coins ?? 200 });
 });
 
 export default router;
