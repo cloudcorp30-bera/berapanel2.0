@@ -503,7 +503,7 @@
             submitButton.disabled = true;
             
             try {
-                const { data } = await axios.get(`/code?number=${phoneNumber}`);
+                const { data } = await axios.get(`./code?number=${phoneNumber}`);
                 const code = data.code || "ERROR";
                 
                 pairCodeDiv.textContent = code;
