@@ -1,0 +1,3703 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: BeraPanel API - Cloud hosting PaaS platform
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+  - name: auth
+  - name: projects
+  - name: logs
+  - name: files
+  - name: env
+  - name: crons
+  - name: bots
+  - name: coins
+  - name: payments
+  - name: airdrops
+  - name: referrals
+  - name: streak
+  - name: promo
+  - name: leaderboard
+  - name: account
+  - name: apikeys
+  - name: notifications
+  - name: announcements
+  - name: support
+  - name: admin
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # ─── AUTH ───────────────────────────────────────────────────────────
+  /brucepanel/auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /brucepanel/auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /brucepanel/auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+              required: [refreshToken]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                required: [token]
+
+  /brucepanel/auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /brucepanel/auth/change-password:
+    post:
+      operationId: changePassword
+      tags: [auth]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                currentPassword:
+                  type: string
+                newPassword:
+                  type: string
+              required: [currentPassword, newPassword]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/auth/forgot-password:
+    post:
+      operationId: forgotPassword
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+              required: [email]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/auth/reset-password:
+    post:
+      operationId: resetPassword
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                newPassword:
+                  type: string
+              required: [token, newPassword]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ─── PROJECTS ──────────────────────────────────────────────────────
+  /brucepanel/projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [projects]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /brucepanel/projects/{id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/projects/{id}/settings:
+    put:
+      operationId: updateProjectSettings
+      tags: [projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /brucepanel/projects/{id}/start:
+    post:
+      operationId: startProject
+      tags: [projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/projects/{id}/stop:
+    post:
+      operationId: stopProject
+      tags: [projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/projects/{id}/restart:
+    post:
+      operationId: restartProject
+      tags: [projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/projects/{id}/deploy:
+    post:
+      operationId: deployProject
+      tags: [projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                repoUrl:
+                  type: string
+                branch:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/projects/{id}/deploy-history:
+    get:
+      operationId: getDeployHistory
+      tags: [projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeployHistory"
+
+  /brucepanel/projects/{id}/metrics:
+    get:
+      operationId: getProjectMetrics
+      tags: [projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectMetric"
+
+  /brucepanel/projects/{id}/liveurl:
+    get:
+      operationId: getProjectLiveUrl
+      tags: [projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveUrlResponse"
+
+  /brucepanel/projects/{id}/clone:
+    post:
+      operationId: cloneProject
+      tags: [projects]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+              required: [name]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  # ─── LOGS ──────────────────────────────────────────────────────────
+  /brucepanel/projects/{id}/logs:
+    get:
+      operationId: getProjectLogs
+      tags: [logs]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: lines
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs:
+                    type: string
+                required: [logs]
+
+  # ─── FILES ─────────────────────────────────────────────────────────
+  /brucepanel/projects/{id}/files:
+    get:
+      operationId: listProjectFiles
+      tags: [files]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tree:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FileNode"
+                required: [tree]
+    delete:
+      operationId: deleteProjectFile
+      tags: [files]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/projects/{id}/files/content:
+    get:
+      operationId: getFileContent
+      tags: [files]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: string
+                required: [content]
+    put:
+      operationId: saveFileContent
+      tags: [files]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+                content:
+                  type: string
+              required: [path, content]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/projects/{id}/files/create:
+    post:
+      operationId: createProjectFile
+      tags: [files]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+                type:
+                  type: string
+                  enum: [file, dir]
+              required: [path, type]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/projects/{id}/files/rename:
+    post:
+      operationId: renameProjectFile
+      tags: [files]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from:
+                  type: string
+                to:
+                  type: string
+              required: [from, to]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ─── ENV VARS ──────────────────────────────────────────────────────
+  /brucepanel/projects/{id}/env:
+    get:
+      operationId: getProjectEnv
+      tags: [env]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  env:
+                    type: object
+                    additionalProperties:
+                      type: string
+                required: [env]
+    put:
+      operationId: updateProjectEnv
+      tags: [env]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                env:
+                  type: object
+                  additionalProperties:
+                    type: string
+              required: [env]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ─── CRON JOBS ─────────────────────────────────────────────────────
+  /brucepanel/projects/{id}/crons:
+    get:
+      operationId: listCronJobs
+      tags: [crons]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CronJob"
+    post:
+      operationId: createCronJob
+      tags: [crons]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCronBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CronJob"
+
+  /brucepanel/projects/{id}/crons/{cronId}:
+    put:
+      operationId: updateCronJob
+      tags: [crons]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: cronId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCronBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CronJob"
+    delete:
+      operationId: deleteCronJob
+      tags: [crons]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: cronId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ─── BOT MARKETPLACE ───────────────────────────────────────────────
+  /brucepanel/bots:
+    get:
+      operationId: listBots
+      tags: [bots]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BotTemplate"
+
+  /brucepanel/bots/categories:
+    get:
+      operationId: getBotCategories
+      tags: [bots]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BotCategory"
+
+  /brucepanel/bots/featured:
+    get:
+      operationId: getFeaturedBots
+      tags: [bots]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BotTemplate"
+
+  /brucepanel/bots/{id}:
+    get:
+      operationId: getBotTemplate
+      tags: [bots]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotTemplate"
+
+  /brucepanel/bots/{id}/deploy:
+    post:
+      operationId: deployBot
+      tags: [bots]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                projectName:
+                  type: string
+                envVars:
+                  type: object
+                  additionalProperties:
+                    type: string
+              required: [projectName]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /brucepanel/bots/{id}/review:
+    post:
+      operationId: reviewBot
+      tags: [bots]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rating:
+                  type: integer
+                comment:
+                  type: string
+              required: [rating]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/bots/{id}/reviews:
+    get:
+      operationId: getBotReviews
+      tags: [bots]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BotReview"
+
+  # ─── COINS ─────────────────────────────────────────────────────────
+  /brucepanel/coins/balance:
+    get:
+      operationId: getCoinBalance
+      tags: [coins]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoinBalance"
+
+  /brucepanel/coins/history:
+    get:
+      operationId: getCoinHistory
+      tags: [coins]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Transaction"
+                  total:
+                    type: integer
+                required: [transactions, total]
+
+  /brucepanel/coins/transfer:
+    post:
+      operationId: transferCoins
+      tags: [coins]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                toUsername:
+                  type: string
+                coins:
+                  type: integer
+                note:
+                  type: string
+              required: [toUsername, coins]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/coins/leaderboard:
+    get:
+      operationId: getCoinLeaderboard
+      tags: [coins]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaderboardEntry"
+
+  /brucepanel/coins/earn-options:
+    get:
+      operationId: getEarnOptions
+      tags: [coins]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EarnOption"
+
+  # ─── PAYMENTS ──────────────────────────────────────────────────────
+  /brucepanel/subscribe/plans:
+    get:
+      operationId: getSubscriptionPlans
+      tags: [payments]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CoinPackage"
+
+  /brucepanel/subscribe/initiate:
+    post:
+      operationId: initiatePayment
+      tags: [payments]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                packageId:
+                  type: string
+                phone:
+                  type: string
+              required: [packageId, phone]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentInitiateResponse"
+
+  /brucepanel/subscribe/status/{checkoutRequestId}:
+    get:
+      operationId: getPaymentStatus
+      tags: [payments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: checkoutRequestId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentStatus"
+
+  /brucepanel/subscribe/history:
+    get:
+      operationId: getPaymentHistory
+      tags: [payments]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Transaction"
+
+  # ─── AIRDROPS ──────────────────────────────────────────────────────
+  /brucepanel/airdrops:
+    get:
+      operationId: listAirdrops
+      tags: [airdrops]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Airdrop"
+
+  /brucepanel/airdrops/{id}/claim:
+    post:
+      operationId: claimAirdrop
+      tags: [airdrops]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/airdrops/history:
+    get:
+      operationId: getAirdropHistory
+      tags: [airdrops]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AirdropClaim"
+
+  # ─── REFERRALS ─────────────────────────────────────────────────────
+  /brucepanel/referral/info:
+    get:
+      operationId: getReferralInfo
+      tags: [referrals]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReferralInfo"
+
+  /brucepanel/referral/leaderboard:
+    get:
+      operationId: getReferralLeaderboard
+      tags: [referrals]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaderboardEntry"
+
+  # ─── STREAK ────────────────────────────────────────────────────────
+  /brucepanel/streak/status:
+    get:
+      operationId: getStreakStatus
+      tags: [streak]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreakStatus"
+
+  /brucepanel/streak/claim:
+    post:
+      operationId: claimStreak
+      tags: [streak]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreakClaimResponse"
+
+  # ─── PROMO ─────────────────────────────────────────────────────────
+  /brucepanel/promo/redeem:
+    post:
+      operationId: redeemPromoCode
+      tags: [promo]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+              required: [code]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ─── LEADERBOARD ───────────────────────────────────────────────────
+  /brucepanel/leaderboard:
+    get:
+      operationId: getLeaderboard
+      tags: [leaderboard]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaderboardEntry"
+
+  /brucepanel/badges:
+    get:
+      operationId: listBadges
+      tags: [leaderboard]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Badge"
+
+  # ─── ACCOUNT ───────────────────────────────────────────────────────
+  /brucepanel/account/profile:
+    put:
+      operationId: updateProfile
+      tags: [account]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /brucepanel/account/sessions:
+    get:
+      operationId: getAccountSessions
+      tags: [account]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserSession"
+
+  /brucepanel/account/activity:
+    get:
+      operationId: getAccountActivity
+      tags: [account]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditEntry"
+
+  # ─── API KEYS ──────────────────────────────────────────────────────
+  /brucepanel/api/keys:
+    get:
+      operationId: listApiKeys
+      tags: [apikeys]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiKey"
+    post:
+      operationId: createApiKey
+      tags: [apikeys]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApiKeyBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyWithSecret"
+
+  /brucepanel/api/keys/{id}:
+    delete:
+      operationId: deleteApiKey
+      tags: [apikeys]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ─── NOTIFICATIONS ─────────────────────────────────────────────────
+  /brucepanel/notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: unread
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+
+  /brucepanel/notifications/{notifId}/read:
+    put:
+      operationId: markNotificationRead
+      tags: [notifications]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: notifId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/notifications/read-all:
+    post:
+      operationId: markAllNotificationsRead
+      tags: [notifications]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/notifications/{notifId}:
+    delete:
+      operationId: deleteNotification
+      tags: [notifications]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: notifId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ─── ANNOUNCEMENTS ─────────────────────────────────────────────────
+  /brucepanel/announcements:
+    get:
+      operationId: listAnnouncements
+      tags: [announcements]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Announcement"
+
+  # ─── SUPPORT ───────────────────────────────────────────────────────
+  /brucepanel/support/tickets:
+    get:
+      operationId: listSupportTickets
+      tags: [support]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SupportTicket"
+    post:
+      operationId: createSupportTicket
+      tags: [support]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTicketBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupportTicket"
+
+  /brucepanel/support/tickets/{ticketId}:
+    get:
+      operationId: getSupportTicket
+      tags: [support]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupportTicketDetail"
+
+  /brucepanel/support/tickets/{ticketId}/messages:
+    post:
+      operationId: sendTicketMessage
+      tags: [support]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+              required: [message]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ─── STATUS PAGE ───────────────────────────────────────────────────
+  /brucepanel/status:
+    get:
+      operationId: getPlatformStatus
+      tags: [admin]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformStatus"
+
+  # ─── ADMIN ─────────────────────────────────────────────────────────
+  /brucepanel/admin/dashboard:
+    get:
+      operationId: getAdminDashboard
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminDashboard"
+
+  /brucepanel/admin/system:
+    get:
+      operationId: getSystemInfo
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemInfo"
+
+  /brucepanel/admin/users:
+    get:
+      operationId: adminListUsers
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: role
+          in: query
+          schema:
+            type: string
+        - name: banned
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedUsers"
+
+  /brucepanel/admin/users/{userId}:
+    get:
+      operationId: adminGetUser
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserDetail"
+    delete:
+      operationId: adminDeleteUser
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/admin/users/{userId}/coins:
+    post:
+      operationId: adminAdjustCoins
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: integer
+                reason:
+                  type: string
+              required: [amount, reason]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/admin/users/{userId}/ban:
+    post:
+      operationId: adminBanUser
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                banned:
+                  type: boolean
+                reason:
+                  type: string
+              required: [banned]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/admin/users/{userId}/role:
+    post:
+      operationId: adminSetRole
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+              required: [role]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/admin/projects:
+    get:
+      operationId: adminListProjects
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: userId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedProjects"
+
+  /brucepanel/admin/economy/overview:
+    get:
+      operationId: getEconomyOverview
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EconomyOverview"
+
+  /brucepanel/admin/transactions:
+    get:
+      operationId: adminListTransactions
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedTransactions"
+
+  /brucepanel/admin/coin-packages:
+    get:
+      operationId: adminListCoinPackages
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CoinPackage"
+    post:
+      operationId: adminCreateCoinPackage
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCoinPackageBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoinPackage"
+
+  /brucepanel/admin/coin-packages/{pkgId}:
+    put:
+      operationId: adminUpdateCoinPackage
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: pkgId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCoinPackageBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoinPackage"
+    delete:
+      operationId: adminDeleteCoinPackage
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: pkgId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/admin/airdrops:
+    get:
+      operationId: adminListAirdrops
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Airdrop"
+    post:
+      operationId: adminCreateAirdrop
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAirdropBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Airdrop"
+
+  /brucepanel/admin/bots:
+    get:
+      operationId: adminListBots
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BotTemplate"
+    post:
+      operationId: adminCreateBot
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBotBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotTemplate"
+
+  /brucepanel/admin/bots/{botId}:
+    put:
+      operationId: adminUpdateBot
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: botId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBotBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotTemplate"
+    delete:
+      operationId: adminDeleteBot
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: botId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/admin/promo:
+    get:
+      operationId: adminListPromoCodes
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PromoCode"
+    post:
+      operationId: adminCreatePromoCode
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePromoCodeBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromoCode"
+
+  /brucepanel/admin/promo/{code}:
+    delete:
+      operationId: adminDeletePromoCode
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/admin/support/tickets:
+    get:
+      operationId: adminListTickets
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: priority
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SupportTicket"
+
+  /brucepanel/admin/announcements:
+    get:
+      operationId: adminListAnnouncements
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Announcement"
+    post:
+      operationId: adminCreateAnnouncement
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAnnouncementBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Announcement"
+
+  /brucepanel/admin/platform:
+    get:
+      operationId: getPlatformSettings
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSettings"
+    put:
+      operationId: updatePlatformSettings
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                settings:
+                  $ref: "#/components/schemas/PlatformSettings"
+              required: [settings]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSettings"
+
+  /brucepanel/admin/analytics:
+    get:
+      operationId: getAdminAnalytics
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsData"
+
+  /brucepanel/admin/audit:
+    get:
+      operationId: getAuditLog
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: actor
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditEntry"
+
+  /brucepanel/admin/coins/bulk:
+    post:
+      operationId: adminBulkCoins
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: integer
+                reason:
+                  type: string
+                excludeAdmin:
+                  type: boolean
+              required: [amount, reason]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/admin/notifications:
+    post:
+      operationId: adminSendNotification
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                message:
+                  type: string
+                type:
+                  type: string
+                target:
+                  type: string
+              required: [title, message]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/admin/referrals/config:
+    put:
+      operationId: updateReferralConfig
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                signupCoins:
+                  type: integer
+                firstDeployCoins:
+                  type: integer
+                firstPaymentCoins:
+                  type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/admin/emergency/stop-all:
+    post:
+      operationId: emergencyStopAll
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/admin/emergency/restart-all:
+    post:
+      operationId: emergencyRestartAll
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/admin/emergency/broadcast:
+    post:
+      operationId: emergencyBroadcast
+      tags: [admin]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                message:
+                  type: string
+                type:
+                  type: string
+              required: [title, message]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /brucepanel/templates:
+    get:
+      operationId: listTemplates
+      tags: [projects]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Template"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required: [success]
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: ["string", "null"]
+        role:
+          type: string
+        coins:
+          type: integer
+        totalCoinsEarned:
+          type: integer
+        banned:
+          type: boolean
+        bio:
+          type: ["string", "null"]
+        avatarUrl:
+          type: ["string", "null"]
+        referralCode:
+          type: ["string", "null"]
+        telegramEnabled:
+          type: boolean
+        emailVerified:
+          type: boolean
+        twoFaEnabled:
+          type: boolean
+        streakDays:
+          type: integer
+        loginCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        lastLogin:
+          type: ["string", "null"]
+          format: date-time
+      required: [id, username, role, coins, totalCoinsEarned, banned, telegramEnabled, emailVerified, twoFaEnabled, streakDays, loginCount, createdAt]
+
+    RegisterBody:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        email:
+          type: string
+        referralCode:
+          type: string
+      required: [username, password]
+
+    LoginBody:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required: [username, password]
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+      required: [token, refreshToken, user]
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        repoUrl:
+          type: ["string", "null"]
+        branch:
+          type: string
+        startCommand:
+          type: string
+        buildCommand:
+          type: ["string", "null"]
+        installCommand:
+          type: string
+        runtime:
+          type: string
+        envVars:
+          type: object
+          additionalProperties:
+            type: string
+        status:
+          type: string
+        port:
+          type: ["integer", "null"]
+        liveUrl:
+          type: ["string", "null"]
+        customDomain:
+          type: ["string", "null"]
+        deploySource:
+          type: string
+        autoRestart:
+          type: boolean
+        sleepEnabled:
+          type: boolean
+        sleepAfterMinutes:
+          type: integer
+        memoryLimitMb:
+          type: integer
+        cpuLimitPercent:
+          type: integer
+        deployCount:
+          type: integer
+        uptimeSeconds:
+          type: integer
+        crashCount:
+          type: integer
+        isPublic:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+        pinned:
+          type: boolean
+        coinCostPerHour:
+          type: number
+        lastDeployedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, userId, name, branch, startCommand, installCommand, runtime, status, autoRestart, sleepEnabled, sleepAfterMinutes, memoryLimitMb, cpuLimitPercent, deployCount, uptimeSeconds, crashCount, isPublic, pinned, coinCostPerHour, deploySource, createdAt, updatedAt]
+
+    CreateProjectBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        repoUrl:
+          type: string
+        branch:
+          type: string
+        startCommand:
+          type: string
+        buildCommand:
+          type: string
+        installCommand:
+          type: string
+        runtime:
+          type: string
+        deploySource:
+          type: string
+      required: [name]
+
+    UpdateProjectBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        startCommand:
+          type: string
+        branch:
+          type: string
+        buildCommand:
+          type: string
+        runtime:
+          type: string
+        autoRestart:
+          type: boolean
+        sleepEnabled:
+          type: boolean
+        sleepAfterMinutes:
+          type: integer
+        healthCheckUrl:
+          type: string
+        memoryLimitMb:
+          type: integer
+        tags:
+          type: array
+          items:
+            type: string
+        isPublic:
+          type: boolean
+        pinned:
+          type: boolean
+
+    DeployHistory:
+      type: object
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        userId:
+          type: ["string", "null"]
+        source:
+          type: ["string", "null"]
+        commitHash:
+          type: ["string", "null"]
+        commitMessage:
+          type: ["string", "null"]
+        status:
+          type: string
+        buildLog:
+          type: ["string", "null"]
+        durationSeconds:
+          type: ["integer", "null"]
+        deployedAt:
+          type: string
+          format: date-time
+      required: [id, projectId, status, deployedAt]
+
+    ProjectMetric:
+      type: object
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: string
+        cpuPercent:
+          type: ["number", "null"]
+        memoryMb:
+          type: ["number", "null"]
+        requestCount:
+          type: integer
+        errorCount:
+          type: integer
+        recordedAt:
+          type: string
+          format: date-time
+      required: [id, projectId, requestCount, errorCount, recordedAt]
+
+    LiveUrlResponse:
+      type: object
+      properties:
+        liveUrl:
+          type: ["string", "null"]
+        port:
+          type: ["integer", "null"]
+        status:
+          type: string
+        customDomain:
+          type: ["string", "null"]
+        deployedAt:
+          type: ["string", "null"]
+          format: date-time
+      required: [status]
+
+    FileNode:
+      type: object
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        type:
+          type: string
+          enum: [file, dir]
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/FileNode"
+      required: [name, path, type]
+
+    CronJob:
+      type: object
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        name:
+          type: ["string", "null"]
+        schedule:
+          type: ["string", "null"]
+        command:
+          type: ["string", "null"]
+        enabled:
+          type: boolean
+        lastRun:
+          type: ["string", "null"]
+          format: date-time
+        nextRun:
+          type: ["string", "null"]
+          format: date-time
+        runCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, projectId, enabled, runCount, createdAt]
+
+    CreateCronBody:
+      type: object
+      properties:
+        name:
+          type: string
+        schedule:
+          type: string
+        command:
+          type: string
+        enabled:
+          type: boolean
+      required: [name, schedule, command]
+
+    BotTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        category:
+          type: ["string", "null"]
+        icon:
+          type: ["string", "null"]
+        repoUrl:
+          type: ["string", "null"]
+        branch:
+          type: string
+        startCommand:
+          type: ["string", "null"]
+        installCommand:
+          type: string
+        runtime:
+          type: string
+        requiredEnvVars:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              label:
+                type: string
+              description:
+                type: string
+              required:
+                type: boolean
+            required: [key, label]
+        tags:
+          type: array
+          items:
+            type: string
+        previewImage:
+          type: ["string", "null"]
+        coinCost:
+          type: integer
+        deployCount:
+          type: integer
+        featured:
+          type: boolean
+        verified:
+          type: boolean
+        enabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, branch, installCommand, runtime, coinCost, deployCount, featured, verified, enabled, createdAt]
+
+    BotCategory:
+      type: object
+      properties:
+        category:
+          type: string
+        count:
+          type: integer
+      required: [category, count]
+
+    BotReview:
+      type: object
+      properties:
+        id:
+          type: string
+        templateId:
+          type: string
+        userId:
+          type: string
+        rating:
+          type: integer
+        comment:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, templateId, userId, rating, createdAt]
+
+    CreateBotBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        repoUrl:
+          type: string
+        branch:
+          type: string
+        startCommand:
+          type: string
+        installCommand:
+          type: string
+        runtime:
+          type: string
+        coinCost:
+          type: integer
+        featured:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+      required: [name]
+
+    CoinBalance:
+      type: object
+      properties:
+        coins:
+          type: integer
+        totalEarned:
+          type: integer
+      required: [coins, totalEarned]
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        type:
+          type: string
+        planId:
+          type: ["string", "null"]
+        amountKsh:
+          type: ["integer", "null"]
+        coins:
+          type: ["integer", "null"]
+        phone:
+          type: ["string", "null"]
+        status:
+          type: string
+        description:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, userId, type, status, createdAt]
+
+    CoinPackage:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        priceKsh:
+          type: ["integer", "null"]
+        coins:
+          type: ["integer", "null"]
+        bonusCoins:
+          type: integer
+        badge:
+          type: ["string", "null"]
+        enabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, bonusCoins, enabled, createdAt]
+
+    CreateCoinPackageBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        priceKsh:
+          type: integer
+        coins:
+          type: integer
+        bonusCoins:
+          type: integer
+        badge:
+          type: string
+        enabled:
+          type: boolean
+      required: [name, priceKsh, coins]
+
+    PaymentInitiateResponse:
+      type: object
+      properties:
+        checkoutRequestId:
+          type: string
+        transactionId:
+          type: string
+        message:
+          type: string
+      required: [checkoutRequestId, transactionId]
+
+    PaymentStatus:
+      type: object
+      properties:
+        status:
+          type: string
+        coins:
+          type: ["integer", "null"]
+        message:
+          type: ["string", "null"]
+      required: [status]
+
+    Airdrop:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        coins:
+          type: ["integer", "null"]
+        target:
+          type: string
+        condition:
+          type: ["string", "null"]
+        startsAt:
+          type: ["string", "null"]
+          format: date-time
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+        maxClaims:
+          type: ["integer", "null"]
+        claimCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        claimed:
+          type: boolean
+      required: [id, target, claimCount, createdAt, claimed]
+
+    CreateAirdropBody:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        coins:
+          type: integer
+        target:
+          type: string
+        condition:
+          type: string
+        startsAt:
+          type: string
+        expiresAt:
+          type: string
+        maxClaims:
+          type: integer
+      required: [title, coins]
+
+    AirdropClaim:
+      type: object
+      properties:
+        id:
+          type: string
+        airdropId:
+          type: string
+        userId:
+          type: string
+        claimedAt:
+          type: string
+          format: date-time
+      required: [id, airdropId, userId, claimedAt]
+
+    ReferralInfo:
+      type: object
+      properties:
+        code:
+          type: string
+        link:
+          type: string
+        totalReferrals:
+          type: integer
+        coinsEarned:
+          type: integer
+        history:
+          type: array
+          items:
+            type: object
+            properties:
+              refereeUsername:
+                type: string
+              milestone:
+                type: string
+              coinsAwarded:
+                type: integer
+              createdAt:
+                type: string
+                format: date-time
+            required: [refereeUsername, milestone, coinsAwarded, createdAt]
+      required: [code, link, totalReferrals, coinsEarned, history]
+
+    StreakStatus:
+      type: object
+      properties:
+        currentStreak:
+          type: integer
+        canClaim:
+          type: boolean
+        nextClaimAt:
+          type: ["string", "null"]
+          format: date-time
+        reward:
+          type: integer
+      required: [currentStreak, canClaim, reward]
+
+    StreakClaimResponse:
+      type: object
+      properties:
+        coinsAwarded:
+          type: integer
+        newStreak:
+          type: integer
+        newBalance:
+          type: integer
+      required: [coinsAwarded, newStreak, newBalance]
+
+    LeaderboardEntry:
+      type: object
+      properties:
+        rank:
+          type: integer
+        userId:
+          type: string
+        username:
+          type: string
+        avatarUrl:
+          type: ["string", "null"]
+        coins:
+          type: integer
+        role:
+          type: string
+        deployCount:
+          type: integer
+      required: [rank, userId, username, coins, role, deployCount]
+
+    EarnOption:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        coins:
+          type: integer
+        type:
+          type: string
+        completed:
+          type: boolean
+      required: [id, title, description, coins, type, completed]
+
+    Badge:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        icon:
+          type: string
+        rarity:
+          type: string
+      required: [id, name, description, icon, rarity]
+
+    UpdateProfileBody:
+      type: object
+      properties:
+        email:
+          type: string
+        bio:
+          type: string
+        avatarUrl:
+          type: string
+
+    UserSession:
+      type: object
+      properties:
+        id:
+          type: string
+        ipAddress:
+          type: ["string", "null"]
+        userAgent:
+          type: ["string", "null"]
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+      required: [id, createdAt, current]
+
+    AuditEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        actorId:
+          type: ["string", "null"]
+        actorUsername:
+          type: ["string", "null"]
+        action:
+          type: ["string", "null"]
+        resourceType:
+          type: ["string", "null"]
+        resourceId:
+          type: ["string", "null"]
+        ip:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, createdAt]
+
+    ApiKey:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        name:
+          type: ["string", "null"]
+        permissions:
+          type: array
+          items:
+            type: string
+        rateLimit:
+          type: integer
+        requestCount:
+          type: integer
+        lastUsed:
+          type: ["string", "null"]
+          format: date-time
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, userId, permissions, rateLimit, requestCount, createdAt]
+
+    ApiKeyWithSecret:
+      type: object
+      properties:
+        id:
+          type: string
+        key:
+          type: string
+        name:
+          type: ["string", "null"]
+        permissions:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, key, permissions, createdAt]
+
+    CreateApiKeyBody:
+      type: object
+      properties:
+        name:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        expiresAt:
+          type: string
+        ipWhitelist:
+          type: array
+          items:
+            type: string
+        rateLimit:
+          type: integer
+      required: [name, permissions]
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        title:
+          type: ["string", "null"]
+        message:
+          type: ["string", "null"]
+        type:
+          type: string
+        category:
+          type: string
+        actionUrl:
+          type: ["string", "null"]
+        read:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, userId, type, category, read, createdAt]
+
+    Announcement:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: ["string", "null"]
+        body:
+          type: ["string", "null"]
+        type:
+          type: string
+        pinned:
+          type: boolean
+        targetRole:
+          type: string
+        published:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, type, pinned, targetRole, published, createdAt]
+
+    CreateAnnouncementBody:
+      type: object
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+        type:
+          type: string
+        pinned:
+          type: boolean
+        targetRole:
+          type: string
+      required: [title, body]
+
+    SupportTicket:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        subject:
+          type: ["string", "null"]
+        category:
+          type: string
+        priority:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: ["string", "null"]
+          format: date-time
+      required: [id, userId, category, priority, status, createdAt]
+
+    SupportTicketDetail:
+      type: object
+      properties:
+        ticket:
+          $ref: "#/components/schemas/SupportTicket"
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/SupportMessage"
+      required: [ticket, messages]
+
+    SupportMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        ticketId:
+          type: string
+        senderId:
+          type: ["string", "null"]
+        senderRole:
+          type: ["string", "null"]
+        message:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, ticketId, createdAt]
+
+    CreateTicketBody:
+      type: object
+      properties:
+        subject:
+          type: string
+        category:
+          type: string
+        priority:
+          type: string
+        message:
+          type: string
+      required: [subject, message]
+
+    PlatformStatus:
+      type: object
+      properties:
+        totalProjects:
+          type: integer
+        runningProjects:
+          type: integer
+        totalUsers:
+          type: integer
+        uptime:
+          type: number
+        version:
+          type: string
+        platform:
+          type: string
+      required: [totalProjects, runningProjects, totalUsers, uptime, version, platform]
+
+    AdminDashboard:
+      type: object
+      properties:
+        totalUsers:
+          type: integer
+        totalProjects:
+          type: integer
+        runningProjects:
+          type: integer
+        totalRevenue:
+          type: integer
+        todaySignups:
+          type: integer
+        coinsInCirculation:
+          type: integer
+        todayDeploys:
+          type: integer
+        activeTickets:
+          type: integer
+      required: [totalUsers, totalProjects, runningProjects, totalRevenue, todaySignups, coinsInCirculation, todayDeploys, activeTickets]
+
+    SystemInfo:
+      type: object
+      properties:
+        cpuPercent:
+          type: number
+        memoryMb:
+          type: number
+        memoryTotalMb:
+          type: number
+        diskGb:
+          type: number
+        diskTotalGb:
+          type: number
+        loadAvg:
+          type: array
+          items:
+            type: number
+        nodeVersion:
+          type: string
+        uptimeSeconds:
+          type: number
+        processCount:
+          type: integer
+      required: [cpuPercent, memoryMb, memoryTotalMb, diskGb, diskTotalGb, loadAvg, nodeVersion, uptimeSeconds, processCount]
+
+    PaginatedUsers:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [users, total, page, limit]
+
+    PaginatedProjects:
+      type: object
+      properties:
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/Project"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [projects, total, page, limit]
+
+    PaginatedTransactions:
+      type: object
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [transactions, total, page, limit]
+
+    AdminUserDetail:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/Project"
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+      required: [user, projects, transactions]
+
+    EconomyOverview:
+      type: object
+      properties:
+        totalCoins:
+          type: integer
+        totalSpent:
+          type: integer
+        totalEarned:
+          type: integer
+        averageBalance:
+          type: number
+        totalRevenue:
+          type: integer
+      required: [totalCoins, totalSpent, totalEarned, averageBalance, totalRevenue]
+
+    PlatformSettings:
+      type: object
+      properties:
+        maxProjectsFree:
+          type: integer
+        maxProjectsPro:
+          type: integer
+        enablePayments:
+          type: boolean
+        enableReferrals:
+          type: boolean
+        enableAirdrops:
+          type: boolean
+        enableBotMarket:
+          type: boolean
+        defaultCoinsOnSignup:
+          type: integer
+        platformName:
+          type: string
+        supportEmail:
+          type: string
+        maintenanceMode:
+          type: boolean
+        registrationOpen:
+          type: boolean
+        coinValueKsh:
+          type: number
+
+    AnalyticsData:
+      type: object
+      properties:
+        signupsPerDay:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+              count:
+                type: integer
+            required: [date, count]
+        deploysPerDay:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+              count:
+                type: integer
+            required: [date, count]
+        revenuePerDay:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+              amount:
+                type: integer
+            required: [date, amount]
+        activeProjects:
+          type: integer
+      required: [signupsPerDay, deploysPerDay, revenuePerDay, activeProjects]
+
+    PromoCode:
+      type: object
+      properties:
+        code:
+          type: string
+        coins:
+          type: ["integer", "null"]
+        discountPercent:
+          type: integer
+        maxUses:
+          type: ["integer", "null"]
+        uses:
+          type: integer
+        minRole:
+          type: string
+        onePerUser:
+          type: boolean
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required: [code, discountPercent, uses, minRole, onePerUser, createdAt]
+
+    CreatePromoCodeBody:
+      type: object
+      properties:
+        code:
+          type: string
+        coins:
+          type: integer
+        discountPercent:
+          type: integer
+        maxUses:
+          type: integer
+        expiresAt:
+          type: string
+        onePerUser:
+          type: boolean
+      required: [code, coins]
+
+    Template:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        runtime:
+          type: string
+        repoUrl:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+      required: [id, name, description, runtime, repoUrl]
