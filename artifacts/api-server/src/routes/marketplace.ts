@@ -107,8 +107,14 @@ router.post("/bots/:id/deploy", requireAuth, async (req, res): Promise<void> => 
   fs.mkdirSync(projectDir, { recursive: true });
 
   // Check for a local zip file for this bot (slugified name)
+  // In production: cwd = workspace root, server binary is at artifacts/api-server/dist/
+  // In dev: cwd = artifacts/api-server/
   const botSlug = bot.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-  const zipPath = path.join(process.cwd(), "bot_zips", `${botSlug}.zip`);
+  const candidates = [
+    path.join(process.cwd(), "artifacts/api-server/bot_zips", `${botSlug}.zip`),
+    path.join(process.cwd(), "bot_zips", `${botSlug}.zip`),
+  ];
+  const zipPath = candidates.find(p => fs.existsSync(p)) || candidates[0];
 
   if (fs.existsSync(zipPath)) {
     // Extract zip directly to project dir (auto-deploy from local zip)
