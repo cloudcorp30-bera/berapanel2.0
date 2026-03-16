@@ -706,7 +706,7 @@ router.get("/referrals/config", async (req, res): Promise<void> => {
   const configs = await db.select().from(referralConfigTable);
   const obj: Record<string, any> = {};
   for (const c of configs) obj[c.key] = c.value;
-  res.json({ signupCoins: obj.signup_coins ?? 50, firstDeployCoins: obj.first_deploy_coins ?? 100, firstPaymentCoins: obj.first_payment_coins ?? 200 });
+  res.json({ signupCoins: obj.signup_coins ?? 10, firstDeployCoins: obj.first_deploy_coins ?? 100, firstPaymentCoins: obj.first_payment_coins ?? 200 });
 });
 
 export default router;

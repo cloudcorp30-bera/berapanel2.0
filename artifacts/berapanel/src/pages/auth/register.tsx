@@ -1,23 +1,33 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { useRegister } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/Button";
-import { Terminal, Lock, User, Mail, Gift } from "lucide-react";
+import { Terminal, Lock, User, Mail, Gift, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export function Register() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const registerMutation = useRegister();
-  
+  const [refFromUrl, setRefFromUrl] = useState<string>("");
+
   const [formData, setFormData] = useState({ username: "", password: "", email: "", referralCode: "" });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref") || "";
+    if (ref) {
+      setRefFromUrl(ref);
+      setFormData(p => ({ ...p, referralCode: ref }));
+    }
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     registerMutation.mutate({ data: formData }, {
       onSuccess: (res) => {
         localStorage.setItem("token", res.token);
-        toast({ title: "Account Created!", description: "Welcome to BeraPanel." });
+        toast({ title: "Account Created!", description: "Welcome to BeraPanel. +50 coins added!" });
         setLocation("/dashboard");
       },
       onError: (err: any) => {
@@ -38,6 +48,16 @@ export function Register() {
           <h1 className="text-3xl font-display font-bold text-white tracking-tight">Initialize <span className="text-primary">Node</span></h1>
           <p className="text-muted-foreground mt-2">Create your cloud workspace</p>
         </div>
+
+        {refFromUrl && (
+          <div className="mb-5 p-3 rounded-xl bg-primary/10 border border-primary/30 flex items-center gap-3">
+            <CheckCircle className="w-5 h-5 text-primary flex-shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-primary">Referral code applied!</p>
+              <p className="text-xs text-muted-foreground">You and your referrer both earn bonus coins on signup.</p>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
@@ -84,13 +104,14 @@ export function Register() {
           
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-foreground flex items-center gap-2">
-              Referral Code <span className="text-xs text-muted-foreground font-normal">(Optional)</span>
+              Referral Code <span className="text-xs text-muted-foreground font-normal">(Optional — earn bonus coins)</span>
             </label>
             <div className="relative">
               <Gift className="absolute left-3 top-2.5 w-5 h-5 text-muted-foreground" />
               <input 
                 type="text"
-                className="w-full pl-10 pr-4 py-2 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                placeholder="Enter a referral code"
+                className={`w-full pl-10 pr-4 py-2 bg-input border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${refFromUrl ? "border-primary/50 text-primary" : "border-border"}`}
                 value={formData.referralCode}
                 onChange={e => setFormData(p => ({ ...p, referralCode: e.target.value }))}
               />

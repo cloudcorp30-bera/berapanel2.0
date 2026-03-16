@@ -7,6 +7,7 @@ import {
   airdropsTable,
   airdropClaimsTable,
   referralsTable,
+  referralConfigTable,
   promoCodesTable,
   promoUsesTable,
   coinTransfersTable,
@@ -83,7 +84,7 @@ router.get("/coins/earn-options", async (req, res): Promise<void> => {
     { id: "signup", title: "Join BeraPanel", description: "Sign up and get 50 coins", coins: 50, type: "bonus", completed: true },
     { id: "first_deploy", title: "First Deploy", description: "Deploy your first project", coins: 100, type: "milestone", completed: false },
     { id: "daily_streak", title: "Daily Login Streak", description: "Log in every day for bonus coins", coins: 10, type: "streak", completed: false },
-    { id: "referral", title: "Refer a Friend", description: "Earn 50 coins per referral signup", coins: 50, type: "referral", completed: false },
+    { id: "referral", title: "Refer a Friend", description: "Earn 10 coins per referral signup", coins: 10, type: "referral", completed: false },
     { id: "add_email", title: "Add Email", description: "Verify your email address", coins: 25, type: "task", completed: false },
     { id: "telegram", title: "Connect Telegram", description: "Link your Telegram account", coins: 25, type: "task", completed: false },
     { id: "promo_code", title: "Redeem Promo Code", description: "Enter a valid promo code", coins: 0, type: "promo", completed: false },
@@ -243,16 +244,40 @@ router.get("/airdrops/history", requireAuth, async (req, res): Promise<void> => 
 // GET /referral/info
 router.get("/referral/info", requireAuth, async (req, res): Promise<void> => {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user!.id)).limit(1);
-  const refs = await db.select().from(referralsTable).where(eq(referralsTable.referrerId, req.user!.id));
+
+  const refs = await db
+    .select({
+      id: referralsTable.id,
+      refereeId: referralsTable.refereeId,
+      coinsAwarded: referralsTable.coinsAwarded,
+      milestone: referralsTable.milestone,
+      createdAt: referralsTable.createdAt,
+      refereeUsername: usersTable.username,
+    })
+    .from(referralsTable)
+    .leftJoin(usersTable, eq(usersTable.id, referralsTable.refereeId))
+    .where(eq(referralsTable.referrerId, req.user!.id))
+    .orderBy(desc(referralsTable.createdAt));
+
   const totalCoins = refs.reduce((s, r) => s + (r.coinsAwarded || 0), 0);
-  const baseUrl = process.env.BASE_URL || "https://yourdomain.com";
+
+  const [bonusRow] = await db.select().from(referralConfigTable).where(eq(referralConfigTable.key, "signup_coins")).limit(1);
+  const bonusPerReferral = bonusRow && bonusRow.value !== null ? Number(bonusRow.value) : 10;
+
   const code = user?.referralCode || "";
   res.json({
+    referralCode: code,
     code,
-    link: `${baseUrl}/register?ref=${code}`,
+    link: `/register?ref=${code}`,
     totalReferrals: refs.length,
     coinsEarned: totalCoins,
-    history: refs.map(r => ({ refereeUsername: "", milestone: r.milestone, coinsAwarded: r.coinsAwarded, createdAt: r.createdAt })),
+    bonusPerReferral,
+    history: refs.map(r => ({
+      refereeUsername: r.refereeUsername || "Unknown",
+      milestone: r.milestone,
+      coinsAwarded: r.coinsAwarded,
+      createdAt: r.createdAt,
+    })),
   });
 });
 
@@ -261,8 +286,23 @@ router.get("/referral/leaderboard", async (req, res): Promise<void> => {
   const results = await db.select({
     referrerId: referralsTable.referrerId,
     count: sql<number>`count(*)`,
+    totalCoins: sql<number>`sum(${referralsTable.coinsAwarded})`,
   }).from(referralsTable).groupBy(referralsTable.referrerId).orderBy(desc(sql`count(*)`)).limit(50);
-  res.json(results.map((r, i) => ({ rank: i + 1, userId: r.referrerId, username: "", coins: 0, role: "user", deployCount: Number(r.count) })));
+
+  const withNames = await Promise.all(results.map(async (r, i) => {
+    const [u] = await db.select({ username: usersTable.username, role: usersTable.role })
+      .from(usersTable).where(eq(usersTable.id, r.referrerId)).limit(1);
+    return {
+      rank: i + 1,
+      userId: r.referrerId,
+      username: u?.username || "Unknown",
+      role: u?.role || "user",
+      referralCount: Number(r.count),
+      coinsEarned: Number(r.totalCoins) || 0,
+    };
+  }));
+
+  res.json(withNames);
 });
 
 // GET /streak/status
