@@ -1,7 +1,7 @@
 import { useListBots, useDeployBot, useGetBotCategories, useGetFeaturedBots, useGetBotReviews, useReviewBot } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Bot, Download, Star, Zap, X, Send, ExternalLink, AlertCircle, Eye, EyeOff, Check } from "lucide-react";
+import { Bot, Download, Star, Zap, X, Send, ExternalLink, AlertCircle, Eye, EyeOff, Check, MessageCircle, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { useState } from "react";
@@ -330,6 +330,60 @@ export function Marketplace() {
         <h1 className="text-3xl font-bold mb-2">Bot Marketplace</h1>
         <p className="text-muted-foreground">Deploy pre-configured WhatsApp, Telegram, Discord, and utility bots instantly.</p>
       </div>
+
+      {/* ATASSA MD Hero Banner */}
+      {(() => {
+        const atassa = (bots as any[] || []).find((b: any) => b.name === "ATASSA MD");
+        if (!atassa) return null;
+        return (
+          <div className="relative overflow-hidden rounded-2xl border border-green-500/30 bg-gradient-to-br from-green-950/60 via-emerald-950/40 to-black p-6 md:p-8">
+            {/* Background glow */}
+            <div className="absolute top-0 right-0 w-64 h-64 bg-green-500/5 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="relative flex flex-col md:flex-row items-start md:items-center gap-6">
+              {/* Icon + badges */}
+              <div className="flex-shrink-0">
+                <div className="w-20 h-20 rounded-2xl bg-green-500/15 border border-green-500/30 flex items-center justify-center text-5xl shadow-xl shadow-green-900/30">
+                  💬
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <h2 className="text-2xl font-extrabold tracking-tight">ATASSA MD</h2>
+                  <Badge variant="success" className="text-[10px] px-2 gap-1">⚡ Featured</Badge>
+                  <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-blue-500/30 text-blue-400 font-bold">
+                    <ShieldCheck className="w-3 h-3" /> Verified
+                  </span>
+                </div>
+                <p className="text-sm text-green-100/70 mb-1 font-medium">Premium WhatsApp Multi-Device Bot by GiftedTech</p>
+                <p className="text-sm text-muted-foreground mb-4 max-w-xl">
+                  Full-featured WhatsApp bot with auto-reply, group management, media downloader, games, AI assistant and more — powered by <span className="text-green-400 font-semibold">gifted-baileys</span>.
+                </p>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {["whatsapp", "baileys", "multi-device", "gifted", "bot"].map(tag => (
+                    <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 font-medium">{tag}</span>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button onClick={() => handleDeploy(atassa)} className="gap-2 bg-green-600 hover:bg-green-500 text-white border-0 shadow-lg shadow-green-900/40">
+                    <Zap className="w-4 h-4" /> Deploy Now — 25 Coins
+                  </Button>
+                  <a href="https://session.giftedtech.co.ke" target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-2 text-sm text-green-400 hover:text-green-300 transition-colors font-medium">
+                    <MessageCircle className="w-4 h-4" /> Get Session ID
+                  </a>
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Download className="w-3 h-3" /> {atassa.deployCount || 0} deploys
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Featured Section */}
       {featuredBots.length > 0 && (
