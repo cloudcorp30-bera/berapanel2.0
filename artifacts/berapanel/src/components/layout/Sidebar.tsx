@@ -12,7 +12,8 @@ import {
   Activity,
   LogOut,
   LifeBuoy,
-  Shield
+  Shield,
+  Key
 } from "lucide-react";
 import { useGetMe } from "@workspace/api-client-react";
 
@@ -26,6 +27,7 @@ export function Sidebar() {
     { href: "/marketplace", label: "Marketplace", icon: Store },
     { href: "/coins", label: "Economy", icon: Coins },
     { href: "/airdrops", label: "Airdrops", icon: Gift },
+    { href: "/api-keys", label: "API Keys", icon: Key },
     { href: "/support", label: "Support", icon: LifeBuoy },
   ];
 

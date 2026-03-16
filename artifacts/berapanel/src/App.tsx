@@ -15,6 +15,7 @@ import { Marketplace } from "./pages/marketplace";
 import { CoinsPage } from "./pages/coins";
 import { AirdropsPage } from "./pages/airdrops";
 import { SupportPage } from "./pages/support";
+import { ApiKeysPage } from "./pages/api-keys";
 import { AdminDashboard } from "./pages/admin";
 import NotFound from "@/pages/not-found";
 
@@ -84,6 +85,9 @@ function ProtectedRoutes() {
         </Route>
         <Route path="/support">
           <ProtectedRoute component={SupportPage} />
+        </Route>
+        <Route path="/api-keys">
+          <ProtectedRoute component={ApiKeysPage} />
         </Route>
         <Route path="/admin">
           <ProtectedRoute component={AdminDashboard} />
