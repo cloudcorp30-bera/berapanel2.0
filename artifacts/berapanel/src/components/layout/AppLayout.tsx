@@ -1,7 +1,7 @@
 import { ReactNode, useState, useRef, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { useGetMe, useListNotifications, useMarkNotificationRead, useMarkAllNotificationsRead } from "@workspace/api-client-react";
-import { Loader2, Bell, CheckCheck, X } from "lucide-react";
+import { Loader2, Bell, CheckCheck, X, Menu } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -51,7 +51,7 @@ function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 glass-panel rounded-xl border border-border shadow-2xl z-50 overflow-hidden">
+        <div className="absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-2rem)] glass-panel rounded-xl border border-border shadow-2xl z-50 overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <span className="font-bold text-sm">Notifications</span>
             <div className="flex items-center gap-2">
@@ -101,6 +101,7 @@ function NotificationBell() {
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const { data: user, isLoading, error } = useGetMe();
 
@@ -121,25 +122,38 @@ export function AppLayout({ children }: { children: ReactNode }) {
     return null;
   }
 
-  const pageTitle = location.split('/').filter(Boolean).join(' › ') || 'Dashboard';
+  const pageTitle = location.split("/").filter(Boolean).join(" › ") || "Dashboard";
 
   return (
     <div className="min-h-screen bg-background flex">
-      <Sidebar />
-      <div className="flex-1 ml-64 flex flex-col min-h-screen overflow-hidden">
-        <header className="h-16 border-b border-border bg-background/80 backdrop-blur-md sticky top-0 z-40 flex items-center justify-between px-8">
-          <h1 className="text-lg font-semibold text-foreground tracking-tight capitalize">
+      <Sidebar mobileOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      {/* Main content — offset on desktop to account for fixed sidebar */}
+      <div className="flex-1 lg:ml-64 flex flex-col min-h-screen overflow-hidden">
+        <header className="h-14 lg:h-16 border-b border-border bg-background/80 backdrop-blur-md sticky top-0 z-40 flex items-center justify-between px-4 lg:px-8 gap-3">
+          {/* Mobile hamburger */}
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="lg:hidden p-2 rounded-lg hover:bg-secondary transition-colors flex-shrink-0"
+            aria-label="Open menu"
+          >
+            <Menu className="w-5 h-5 text-muted-foreground" />
+          </button>
+
+          <h1 className="text-sm lg:text-lg font-semibold text-foreground tracking-tight capitalize truncate flex-1">
             {pageTitle}
           </h1>
-          <div className="flex items-center gap-3">
-            <div className="px-4 py-1.5 rounded-full bg-secondary border border-border flex items-center gap-2">
+
+          <div className="flex items-center gap-2 lg:gap-3 flex-shrink-0">
+            <div className="hidden sm:flex px-3 py-1.5 rounded-full bg-secondary border border-border items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-success animate-pulse"></div>
-              <span className="text-sm font-mono text-muted-foreground">Sys: Online</span>
+              <span className="text-xs lg:text-sm font-mono text-muted-foreground">Online</span>
             </div>
             <NotificationBell />
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto p-8 relative">
+
+        <main className="flex-1 overflow-y-auto p-4 lg:p-8 relative">
           <div className="absolute inset-0 bg-[url('/images/hero-bg.png')] bg-cover bg-center opacity-5 pointer-events-none mix-blend-screen"></div>
           <div className="relative z-10">
             {children}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   useGetAdminDashboard, useAdminListUsers, useAdminListCoinPackages,
   useAdminCreateCoinPackage, useAdminUpdateCoinPackage, useAdminDeleteCoinPackage,
@@ -15,7 +15,8 @@ import {
   ArrowUpCircle, ArrowDownCircle, Crown, Megaphone, LifeBuoy, Zap,
   CheckCircle2, Gift, Bell, Settings, TrendingUp, Cpu, BarChart2,
   ClipboardList, Tag, AlertOctagon, RefreshCw, Database, Globe, Power,
-  Lock, ChevronRight, MessageSquare, Send, ExternalLink, Eye
+  Lock, ChevronRight, MessageSquare, Send, ExternalLink, Eye,
+  Bot, Star, CheckSquare, XSquare, Clock, FolderOpen, ToggleLeft, ToggleRight
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line } from "recharts";
@@ -63,13 +64,29 @@ function StatCard({ icon: Icon, label, value, color, bg, border }: any) {
 
 // ─── User Management Modal ────────────────────────────────────────────────────
 function UserModal({ user, onClose, onRefresh }: { user: any; onClose: () => void; onRefresh: () => void }) {
+  const [modalTab, setModalTab] = useState<"info" | "projects" | "actions">("info");
   const [coinAmount, setCoinAmount] = useState("");
   const [coinReason, setCoinReason] = useState("");
   const [role, setRole] = useState(user.role || "user");
+  const [banReason, setBanReason] = useState("");
+  const [showBanDialog, setShowBanDialog] = useState(false);
+  const [userProjects, setUserProjects] = useState<any[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
   const { toast } = useToast();
   const qc = useQueryClient();
 
   const invalidate = () => { onRefresh(); qc.invalidateQueries(); };
+
+  const loadProjects = useCallback(async () => {
+    setProjectsLoading(true);
+    try {
+      const data = await apiFetch(`/admin/users/${user.id}`);
+      setUserProjects(data.projects || []);
+    } catch { setUserProjects([]); }
+    finally { setProjectsLoading(false); }
+  }, [user.id]);
+
+  useEffect(() => { if (modalTab === "projects") loadProjects(); }, [modalTab, loadProjects]);
 
   const adjustCoins = async (sign: 1 | -1) => {
     const n = parseInt(coinAmount);
@@ -79,7 +96,7 @@ function UserModal({ user, onClose, onRefresh }: { user: any; onClose: () => voi
         method: "POST",
         body: JSON.stringify({ amount: n * sign, reason: coinReason || (sign > 0 ? "Admin gift" : "Admin deduction") }),
       });
-      toast({ title: sign > 0 ? `+${n} coins added` : `-${n} coins deducted` });
+      toast({ title: sign > 0 ? `+${n} coins added ✅` : `-${n} coins deducted` });
       setCoinAmount(""); setCoinReason(""); invalidate();
     } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   };
@@ -91,18 +108,17 @@ function UserModal({ user, onClose, onRefresh }: { user: any; onClose: () => voi
     } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   };
 
-  const toggleBan = async () => {
-    const newBanned = !user.banned;
+  const executeBan = async (banned: boolean) => {
     try {
-      await apiFetch(`/admin/users/${user.id}/ban`, { method: "POST", body: JSON.stringify({ banned: newBanned, reason: newBanned ? "Banned by admin" : null }) });
-      toast({ title: newBanned ? "User banned" : "User unbanned" }); invalidate(); onClose();
+      await apiFetch(`/admin/users/${user.id}/ban`, { method: "POST", body: JSON.stringify({ banned, reason: banned ? (banReason || "Banned by admin") : null }) });
+      toast({ title: banned ? "User banned" : "User unbanned" }); setShowBanDialog(false); invalidate(); onClose();
     } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   };
 
   const toggleVerified = async () => {
     try {
       await apiFetch(`/admin/users/${user.id}/verify`, { method: "POST" });
-      toast({ title: user.emailVerified ? "Badge removed" : "Blue badge granted ✅" }); invalidate();
+      toast({ title: user.emailVerified ? "Badge removed" : "✅ Blue badge granted!" }); invalidate();
     } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   };
 
@@ -132,93 +148,210 @@ function UserModal({ user, onClose, onRefresh }: { user: any; onClose: () => voi
     } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   };
 
+  const forceStopProject = async (projectId: string) => {
+    try {
+      await apiFetch(`/admin/projects/${projectId}/stop`, { method: "POST" });
+      toast({ title: "Project stopped" }); loadProjects();
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+  };
+
+  const deleteProject = async (projectId: string, name: string) => {
+    if (!confirm(`Delete project "${name}"? This cannot be undone.`)) return;
+    try {
+      await apiFetch(`/admin/projects/${projectId}`, { method: "DELETE" });
+      toast({ title: "Project deleted" }); loadProjects();
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+  };
+
+  const modalTabs = [
+    { id: "info" as const, label: "Info", icon: Users },
+    { id: "projects" as const, label: "Projects", icon: FolderOpen },
+    { id: "actions" as const, label: "Actions", icon: Settings },
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="glass-panel rounded-2xl border border-border w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="p-5 border-b border-border flex items-center justify-between sticky top-0 bg-card/80 backdrop-blur-md">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/30 to-accent/30 border border-border flex items-center justify-center font-bold text-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3 sm:p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="glass-panel rounded-2xl border border-border w-full max-w-lg shadow-2xl max-h-[95vh] flex flex-col">
+        {/* Header */}
+        <div className="p-4 sm:p-5 border-b border-border flex items-center justify-between flex-shrink-0 bg-card/80 backdrop-blur-md rounded-t-2xl">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/30 to-accent/30 border border-border flex items-center justify-center font-bold text-sm flex-shrink-0">
               {user.username?.charAt(0).toUpperCase()}
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-bold">{user.username}</span>
-                {user.emailVerified && <BadgeCheck className="w-4 h-4 text-blue-400" />}
-                {user.banned && <Ban className="w-4 h-4 text-destructive" />}
+                {user.emailVerified && <BadgeCheck className="w-4 h-4 text-blue-400 flex-shrink-0" />}
+                {user.banned && <Ban className="w-4 h-4 text-destructive flex-shrink-0" />}
               </div>
               <RoleBadge role={user.role} />
             </div>
           </div>
-          <button onClick={onClose}><X className="w-5 h-5 text-muted-foreground hover:text-foreground" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors flex-shrink-0">
+            <X className="w-5 h-5 text-muted-foreground hover:text-foreground" />
+          </button>
         </div>
 
-        <div className="p-5 flex flex-col gap-5">
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div className="glass-panel rounded-xl p-3 border border-border">
-              <p className="text-xs text-muted-foreground mb-0.5">Balance</p>
-              <p className="font-mono font-bold text-yellow-400">{(user.coins || 0).toLocaleString()}</p>
-            </div>
-            <div className="glass-panel rounded-xl p-3 border border-border">
-              <p className="text-xs text-muted-foreground mb-0.5">Streak</p>
-              <p className="font-mono font-bold text-orange-400">{user.streakDays || 0}d 🔥</p>
-            </div>
-            <div className="glass-panel rounded-xl p-3 border border-border">
-              <p className="text-xs text-muted-foreground mb-0.5">Joined</p>
-              <p className="text-xs font-medium">{ago(user.createdAt)}</p>
-            </div>
-          </div>
+        {/* Sub-tabs */}
+        <div className="flex border-b border-border flex-shrink-0">
+          {modalTabs.map(t => (
+            <button key={t.id} onClick={() => setModalTab(t.id)}
+              className={cn("flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors", modalTab === t.id ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-foreground")}>
+              <t.icon className="w-3.5 h-3.5" />{t.label}
+            </button>
+          ))}
+        </div>
 
-          <div className="glass-panel rounded-xl p-4 border border-border">
-            <p className="text-sm font-semibold mb-3 flex items-center gap-2"><Coins className="w-4 h-4 text-yellow-400" /> Adjust Coins</p>
-            <div className="flex gap-2 mb-2">
-              <input
-                type="number" min="1" placeholder="Amount"
-                value={coinAmount} onChange={e => setCoinAmount(e.target.value)}
-                className="flex-1 bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-              />
-              <Button className="gap-1 bg-green-600 hover:bg-green-500 border-none text-white px-3" onClick={() => adjustCoins(1)} title="Add coins">
-                <ArrowUpCircle className="w-4 h-4" /> Add
-              </Button>
-              <Button className="gap-1 bg-red-600 hover:bg-red-500 border-none text-white px-3" onClick={() => adjustCoins(-1)} title="Deduct coins">
-                <ArrowDownCircle className="w-4 h-4" /> Deduct
-              </Button>
-            </div>
-            <input
-              type="text" placeholder="Reason (optional)"
-              value={coinReason} onChange={e => setCoinReason(e.target.value)}
-              className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-            />
-          </div>
+        {/* Content */}
+        <div className="overflow-y-auto flex-1 p-4 sm:p-5">
 
-          <div className="glass-panel rounded-xl p-4 border border-border">
-            <p className="text-sm font-semibold mb-3 flex items-center gap-2"><Crown className="w-4 h-4 text-purple-400" /> Role</p>
-            <div className="flex gap-2">
-              <select value={role} onChange={e => setRole(e.target.value)} className="flex-1 bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none">
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
-                <option value="superadmin">Superadmin</option>
-              </select>
-              <Button onClick={setUserRole} className="px-4">Set</Button>
-            </div>
-          </div>
+          {/* ── Info Tab ── */}
+          {modalTab === "info" && (
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="glass-panel rounded-xl p-3 border border-border">
+                  <p className="text-xs text-muted-foreground mb-0.5">Balance</p>
+                  <p className="font-mono font-bold text-yellow-400 text-sm">{(user.coins || 0).toLocaleString()}</p>
+                </div>
+                <div className="glass-panel rounded-xl p-3 border border-border">
+                  <p className="text-xs text-muted-foreground mb-0.5">Streak</p>
+                  <p className="font-mono font-bold text-orange-400 text-sm">{user.streakDays || 0}d 🔥</p>
+                </div>
+                <div className="glass-panel rounded-xl p-3 border border-border">
+                  <p className="text-xs text-muted-foreground mb-0.5">Joined</p>
+                  <p className="text-xs font-medium">{ago(user.createdAt)}</p>
+                </div>
+              </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" onClick={toggleVerified} className="gap-2 text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/30">
-              <BadgeCheck className="w-4 h-4" />{user.emailVerified ? "Remove Badge" : "Grant Badge"}
-            </Button>
-            <Button variant="outline" onClick={toggleBan} className={cn("gap-2", user.banned ? "text-green-400 hover:bg-green-500/10" : "text-destructive hover:bg-destructive/10 hover:border-destructive/30")}>
-              <Ban className="w-4 h-4" />{user.banned ? "Unban" : "Ban User"}
-            </Button>
-            <Button variant="outline" onClick={sendNotif} className="gap-2">
-              <Bell className="w-4 h-4" />Notify
-            </Button>
-            <Button variant="outline" onClick={resetPassword} className="gap-2">
-              <Lock className="w-4 h-4" />Reset PW
-            </Button>
-            <Button variant="outline" onClick={deleteUser} className="gap-2 text-destructive hover:bg-destructive/10 col-span-2">
-              <Trash2 className="w-4 h-4" />Delete Account Permanently
-            </Button>
-          </div>
+              {user.banned && user.banReason && (
+                <div className="glass-panel rounded-xl p-3 border border-destructive/30 bg-destructive/5">
+                  <p className="text-xs font-semibold text-destructive mb-1">Ban Reason</p>
+                  <p className="text-xs text-muted-foreground">{user.banReason}</p>
+                </div>
+              )}
+
+              <div className="glass-panel rounded-xl p-4 border border-border">
+                <p className="text-sm font-semibold mb-3 flex items-center gap-2"><Coins className="w-4 h-4 text-yellow-400" /> Adjust Coins</p>
+                <div className="flex gap-2 mb-2">
+                  <input type="number" min="1" placeholder="Amount" value={coinAmount} onChange={e => setCoinAmount(e.target.value)}
+                    className="flex-1 min-w-0 bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                  <Button className="gap-1 bg-green-600 hover:bg-green-500 border-none text-white px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0" onClick={() => adjustCoins(1)}>
+                    <ArrowUpCircle className="w-4 h-4" /><span className="hidden sm:inline">Add</span>
+                  </Button>
+                  <Button className="gap-1 bg-red-600 hover:bg-red-500 border-none text-white px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0" onClick={() => adjustCoins(-1)}>
+                    <ArrowDownCircle className="w-4 h-4" /><span className="hidden sm:inline">Deduct</span>
+                  </Button>
+                </div>
+                <input type="text" placeholder="Reason (optional)" value={coinReason} onChange={e => setCoinReason(e.target.value)}
+                  className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+              </div>
+
+              <div className="glass-panel rounded-xl p-4 border border-border">
+                <p className="text-sm font-semibold mb-3 flex items-center gap-2"><Crown className="w-4 h-4 text-purple-400" /> Role</p>
+                <div className="flex gap-2">
+                  <select value={role} onChange={e => setRole(e.target.value)} className="flex-1 bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none">
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                    <option value="superadmin">Superadmin</option>
+                  </select>
+                  <Button onClick={setUserRole} className="px-4 flex-shrink-0">Set</Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Projects Tab ── */}
+          {modalTab === "projects" && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">{user.username}'s Projects</p>
+                <button onClick={loadProjects} className="p-1.5 hover:bg-secondary rounded-lg transition-colors">
+                  <RefreshCw className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+              {projectsLoading ? (
+                <div className="flex items-center justify-center py-8"><RefreshCw className="w-5 h-5 text-muted-foreground animate-spin" /></div>
+              ) : userProjects.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">No projects found.</div>
+              ) : (
+                userProjects.map((p: any) => (
+                  <div key={p.id} className="glass-panel rounded-xl border border-border p-3 flex flex-col gap-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm truncate">{p.name}</p>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full border", {
+                            "bg-green-500/10 border-green-500/30 text-green-400": p.status === "running",
+                            "bg-yellow-500/10 border-yellow-500/30 text-yellow-400": p.status === "building",
+                            "bg-secondary border-border text-muted-foreground": p.status === "stopped",
+                            "bg-red-500/10 border-red-500/30 text-red-400": p.status === "error",
+                          })}>{p.status}</span>
+                          {p.runtime && <span className="text-[10px] text-muted-foreground">{p.runtime}</span>}
+                          {p.port && <span className="text-[10px] text-muted-foreground font-mono">:{p.port}</span>}
+                        </div>
+                      </div>
+                      <div className="flex gap-1.5 flex-shrink-0">
+                        {p.status === "running" && (
+                          <button onClick={() => forceStopProject(p.id)} className="p-1.5 text-yellow-400 hover:bg-yellow-500/10 rounded-lg transition-colors" title="Force stop">
+                            <Power className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {p.liveUrl && (
+                          <a href={p.liveUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors">
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                        <button onClick={() => deleteProject(p.id, p.name)} className="p-1.5 text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">Created {ago(p.createdAt)}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* ── Actions Tab ── */}
+          {modalTab === "actions" && (
+            <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" onClick={toggleVerified} className={cn("gap-2", user.emailVerified ? "text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/30" : "text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/30")}>
+                  <BadgeCheck className="w-4 h-4" />{user.emailVerified ? "Remove Badge" : "Grant Badge"}
+                </Button>
+                <Button variant="outline" onClick={() => { if (user.banned) executeBan(false); else setShowBanDialog(true); }}
+                  className={cn("gap-2", user.banned ? "text-green-400 hover:bg-green-500/10" : "text-destructive hover:bg-destructive/10 hover:border-destructive/30")}>
+                  <Ban className="w-4 h-4" />{user.banned ? "Unban" : "Ban User"}
+                </Button>
+                <Button variant="outline" onClick={sendNotif} className="gap-2">
+                  <Bell className="w-4 h-4" />Notify
+                </Button>
+                <Button variant="outline" onClick={resetPassword} className="gap-2">
+                  <Lock className="w-4 h-4" />Reset PW
+                </Button>
+                <Button variant="outline" onClick={deleteUser} className="gap-2 text-destructive hover:bg-destructive/10 col-span-2">
+                  <Trash2 className="w-4 h-4" />Delete Account Permanently
+                </Button>
+              </div>
+
+              {showBanDialog && (
+                <div className="glass-panel rounded-xl border border-destructive/30 bg-destructive/5 p-4 flex flex-col gap-3">
+                  <p className="text-sm font-semibold text-destructive">Ban {user.username}</p>
+                  <textarea
+                    placeholder="Reason for ban (shown to user)..."
+                    value={banReason} onChange={e => setBanReason(e.target.value)}
+                    rows={3}
+                    className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-destructive/40 resize-none"
+                  />
+                  <div className="flex gap-2">
+                    <Button className="flex-1 bg-destructive hover:bg-destructive/90 border-none text-white" onClick={() => executeBan(true)}>Confirm Ban</Button>
+                    <Button variant="outline" className="flex-1" onClick={() => setShowBanDialog(false)}>Cancel</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -314,6 +447,373 @@ function AirdropModal({ onClose, onRefresh }: { onClose: () => void; onRefresh: 
           <Button type="submit" className="w-full" isLoading={createMut.isPending}>Create Airdrop</Button>
         </form>
       </div>
+    </div>
+  );
+}
+
+// ─── Bot Modal ─────────────────────────────────────────────────────────────────
+function BotModal({ bot, onClose, onRefresh }: { bot?: any; onClose: () => void; onRefresh: () => void }) {
+  const [form, setForm] = useState({
+    name: bot?.name || "",
+    description: bot?.description || "",
+    category: bot?.category || "utility",
+    repoUrl: bot?.repoUrl || "",
+    branch: bot?.branch || "main",
+    startCommand: bot?.startCommand || "node index.js",
+    installCommand: bot?.installCommand || "npm install",
+    runtime: bot?.runtime || "node",
+    coinCost: bot?.coinCost || 0,
+    featured: bot?.featured || false,
+    verified: bot?.verified || false,
+    enabled: bot?.enabled !== false,
+    previewImage: bot?.previewImage || "",
+    readme: bot?.readme || "",
+  });
+  const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (bot) {
+        await apiFetch(`/admin/bots/${bot.id}`, { method: "PUT", body: JSON.stringify(form) });
+        toast({ title: "Bot updated!" });
+      } else {
+        await apiFetch(`/admin/bots`, { method: "POST", body: JSON.stringify(form) });
+        toast({ title: "Bot added to marketplace! 🤖" });
+      }
+      onRefresh(); onClose();
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+    finally { setLoading(false); }
+  };
+
+  const categories = ["utility", "trading", "gaming", "productivity", "ai", "crypto", "social", "other"];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3 sm:p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="glass-panel rounded-2xl border border-border w-full max-w-lg shadow-2xl max-h-[95vh] flex flex-col">
+        <div className="p-5 border-b border-border flex items-center justify-between flex-shrink-0">
+          <h3 className="font-bold flex items-center gap-2"><Bot className="w-5 h-5 text-accent" />{bot ? "Edit Bot" : "Add Bot to Marketplace"}</h3>
+          <button onClick={onClose} className="p-1.5 hover:bg-secondary rounded-lg"><X className="w-5 h-5 text-muted-foreground" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-4 overflow-y-auto flex-1">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Bot Name *</label>
+              <input required type="text" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                placeholder="e.g. Telegram Trading Bot"
+                className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Description</label>
+              <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
+                rows={2} placeholder="What does this bot do?"
+                className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Category</label>
+              <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}
+                className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none">
+                {categories.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Runtime</label>
+              <select value={form.runtime} onChange={e => setForm(p => ({ ...p, runtime: e.target.value }))}
+                className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none">
+                {["node", "python", "bun", "deno"].map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">GitHub Repo URL *</label>
+              <input required type="url" value={form.repoUrl} onChange={e => setForm(p => ({ ...p, repoUrl: e.target.value }))}
+                placeholder="https://github.com/user/repo"
+                className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Branch</label>
+              <input type="text" value={form.branch} onChange={e => setForm(p => ({ ...p, branch: e.target.value }))}
+                className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Coin Cost</label>
+              <input type="number" min="0" value={form.coinCost} onChange={e => setForm(p => ({ ...p, coinCost: +e.target.value }))}
+                className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Install Command</label>
+              <input type="text" value={form.installCommand} onChange={e => setForm(p => ({ ...p, installCommand: e.target.value }))}
+                className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Start Command</label>
+              <input type="text" value={form.startCommand} onChange={e => setForm(p => ({ ...p, startCommand: e.target.value }))}
+                className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none" />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Preview Image URL (optional)</label>
+              <input type="url" value={form.previewImage} onChange={e => setForm(p => ({ ...p, previewImage: e.target.value }))}
+                placeholder="https://example.com/preview.png"
+                className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none" />
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 border-t border-border pt-3">
+            <p className="text-xs font-semibold text-muted-foreground">Visibility & Status</p>
+            {[
+              { key: "enabled", label: "Enabled (visible to users)" },
+              { key: "featured", label: "Featured (shown in featured section)" },
+              { key: "verified", label: "Verified (show verified badge)" },
+            ].map(({ key, label }) => (
+              <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={(form as any)[key]} onChange={e => setForm(p => ({ ...p, [key]: e.target.checked }))} className="rounded" />
+                {label}
+              </label>
+            ))}
+          </div>
+          <Button type="submit" className="w-full" isLoading={loading}>{bot ? "Save Changes" : "Add Bot to Marketplace"}</Button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Badge Requests Tab ────────────────────────────────────────────────────────
+function BadgeRequestsTab() {
+  const [requests, setRequests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("pending");
+  const [noteModal, setNoteModal] = useState<{ id: string; action: "approve" | "deny" } | null>(null);
+  const [adminNote, setAdminNote] = useState("");
+  const [acting, setActing] = useState(false);
+  const { toast } = useToast();
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const data = await apiFetch(`/admin/badge-requests?status=${filter}`);
+      setRequests(Array.isArray(data) ? data : []);
+    } catch { setRequests([]); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, [filter]);
+
+  const executeAction = async () => {
+    if (!noteModal) return;
+    setActing(true);
+    try {
+      await apiFetch(`/admin/badge-requests/${noteModal.id}/${noteModal.action}`, {
+        method: "POST",
+        body: JSON.stringify({ adminNote }),
+      });
+      toast({ title: noteModal.action === "approve" ? "Badge approved! ✅" : "Request denied" });
+      setNoteModal(null); setAdminNote(""); load();
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+    finally { setActing(false); }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      {noteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={e => { if (e.target === e.currentTarget) setNoteModal(null); }}>
+          <div className="glass-panel rounded-2xl border border-border w-full max-w-md shadow-2xl p-5 flex flex-col gap-4">
+            <h3 className="font-bold flex items-center gap-2">
+              {noteModal.action === "approve" ? <CheckSquare className="w-5 h-5 text-green-400" /> : <XSquare className="w-5 h-5 text-destructive" />}
+              {noteModal.action === "approve" ? "Approve Badge" : "Deny Request"}
+            </h3>
+            <textarea value={adminNote} onChange={e => setAdminNote(e.target.value)} rows={3}
+              placeholder="Admin note (optional — sent to user)..."
+              className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+            <div className="flex gap-2">
+              <Button className={cn("flex-1 border-none text-white", noteModal.action === "approve" ? "bg-green-600 hover:bg-green-500" : "bg-destructive hover:bg-destructive/90")}
+                onClick={executeAction} isLoading={acting}>
+                {noteModal.action === "approve" ? "Approve & Grant Badge" : "Deny Request"}
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={() => { setNoteModal(null); setAdminNote(""); }}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h2 className="font-bold flex items-center gap-2"><BadgeCheck className="w-5 h-5 text-blue-400" /> Verification Badge Requests</h2>
+        <div className="flex gap-1 bg-secondary/50 p-1 rounded-lg border border-border">
+          {["pending", "approved", "denied"].map(s => (
+            <button key={s} onClick={() => setFilter(s)}
+              className={cn("px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors", filter === s ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-10"><RefreshCw className="w-5 h-5 text-muted-foreground animate-spin" /></div>
+      ) : requests.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <BadgeCheck className="w-8 h-8 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">No {filter} badge requests.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {requests.map((r: any) => (
+            <div key={r.id} className="glass-panel rounded-xl border border-border p-4 flex flex-col sm:flex-row sm:items-start gap-3">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500/30 to-primary/30 border border-border flex items-center justify-center font-bold text-sm flex-shrink-0">
+                  {(r.username || "?").charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-sm">{r.username}</span>
+                    {r.emailVerified && <BadgeCheck className="w-4 h-4 text-blue-400 flex-shrink-0" />}
+                    <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full border flex-shrink-0", {
+                      "bg-yellow-500/10 border-yellow-500/30 text-yellow-400": r.status === "pending",
+                      "bg-green-500/10 border-green-500/30 text-green-400": r.status === "approved",
+                      "bg-red-500/10 border-red-500/30 text-red-400": r.status === "denied",
+                    })}>{r.status}</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1 break-words">{r.reason}</p>
+                  {r.adminNote && <p className="text-xs text-primary/70 mt-1 italic">Note: {r.adminNote}</p>}
+                  <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />{ago(r.createdAt)}
+                    <span className="text-muted-foreground/50">·</span>
+                    {(r.coins || 0).toLocaleString()} coins
+                  </p>
+                </div>
+              </div>
+              {r.status === "pending" && (
+                <div className="flex gap-2 sm:flex-col sm:w-auto w-full">
+                  <Button size="sm" className="flex-1 sm:flex-none gap-1 bg-green-600 hover:bg-green-500 border-none text-white text-xs"
+                    onClick={() => setNoteModal({ id: r.id, action: "approve" })}>
+                    <CheckSquare className="w-3.5 h-3.5" /> Approve
+                  </Button>
+                  <Button size="sm" variant="outline" className="flex-1 sm:flex-none gap-1 text-destructive hover:bg-destructive/10 text-xs"
+                    onClick={() => setNoteModal({ id: r.id, action: "deny" })}>
+                    <XSquare className="w-3.5 h-3.5" /> Deny
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Bots Management Tab ───────────────────────────────────────────────────────
+function BotsTab() {
+  const [bots, setBots] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddBot, setShowAddBot] = useState(false);
+  const [editBot, setEditBot] = useState<any>(null);
+  const [search, setSearch] = useState("");
+  const { toast } = useToast();
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const data = await apiFetch("/admin/bots");
+      setBots(Array.isArray(data) ? data : []);
+    } catch { setBots([]); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const deleteBot = async (id: string, name: string) => {
+    if (!confirm(`Delete bot "${name}"? This cannot be undone.`)) return;
+    try {
+      await apiFetch(`/admin/bots/${id}`, { method: "DELETE" });
+      toast({ title: "Bot deleted" }); load();
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+  };
+
+  const toggleField = async (id: string, field: string, value: boolean) => {
+    try {
+      await apiFetch(`/admin/bots/${id}`, { method: "PUT", body: JSON.stringify({ [field]: value }) });
+      toast({ title: "Updated!" }); load();
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
+  };
+
+  const filtered = bots.filter(b => !search || b.name?.toLowerCase().includes(search.toLowerCase()) || b.category?.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div className="flex flex-col gap-4">
+      {(showAddBot || editBot) && <BotModal bot={editBot} onClose={() => { setShowAddBot(false); setEditBot(null); }} onRefresh={load} />}
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-48">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input className="w-full bg-secondary border border-border rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+            placeholder="Search bots..." value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <Button onClick={() => setShowAddBot(true)} className="gap-2 bg-primary hover:bg-primary/90 border-none text-white flex-shrink-0">
+          <Plus className="w-4 h-4" /> Add Bot
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-10"><RefreshCw className="w-5 h-5 text-muted-foreground animate-spin" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <Bot className="w-8 h-8 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">{search ? "No bots match your search." : "No bots yet. Add the first one!"}</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filtered.map((b: any) => (
+            <div key={b.id} className={cn("glass-panel rounded-2xl border p-4 flex flex-col gap-3", b.enabled ? "border-border" : "border-border/40 opacity-60")}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-sm">{b.name}</h3>
+                    {b.verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-400" />}
+                    {b.featured && <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />}
+                    {!b.enabled && <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary border border-border text-muted-foreground font-bold">HIDDEN</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{b.description}</p>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/30 text-accent">{b.category}</span>
+                    <span className="text-[10px] text-muted-foreground font-mono">{b.runtime}</span>
+                    {b.coinCost > 0 && <span className="text-[10px] text-yellow-400 font-mono">{b.coinCost} coins</span>}
+                    <span className="text-[10px] text-muted-foreground">{b.deployCount || 0} deploys</span>
+                  </div>
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  <button onClick={() => setEditBot(b)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors">
+                    <Edit className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => deleteBot(b.id, b.name)} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <div className="flex gap-2 border-t border-border/50 pt-2">
+                <button onClick={() => toggleField(b.id, "enabled", !b.enabled)}
+                  className={cn("flex-1 flex items-center justify-center gap-1 py-1 rounded-lg text-xs font-medium transition-colors", b.enabled ? "text-green-400 bg-green-500/10 hover:bg-green-500/20" : "text-muted-foreground bg-secondary hover:bg-secondary/80")}>
+                  {b.enabled ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
+                  {b.enabled ? "Enabled" : "Disabled"}
+                </button>
+                <button onClick={() => toggleField(b.id, "featured", !b.featured)}
+                  className={cn("flex-1 flex items-center justify-center gap-1 py-1 rounded-lg text-xs font-medium transition-colors", b.featured ? "text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20" : "text-muted-foreground bg-secondary hover:bg-secondary/80")}>
+                  <Star className="w-3.5 h-3.5" />{b.featured ? "Featured" : "Not Featured"}
+                </button>
+                <button onClick={() => toggleField(b.id, "verified", !b.verified)}
+                  className={cn("flex-1 flex items-center justify-center gap-1 py-1 rounded-lg text-xs font-medium transition-colors", b.verified ? "text-blue-400 bg-blue-500/10 hover:bg-blue-500/20" : "text-muted-foreground bg-secondary hover:bg-secondary/80")}>
+                  <BadgeCheck className="w-3.5 h-3.5" />{b.verified ? "Verified" : "Unverified"}
+                </button>
+              </div>
+              {b.repoUrl && (
+                <a href={b.repoUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 truncate">
+                  <ExternalLink className="w-3 h-3 flex-shrink-0" />{b.repoUrl}
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -940,7 +1440,7 @@ function AdminProjectsTab() {
 }
 
 // ─── Main Admin Dashboard ─────────────────────────────────────────────────────
-type AdminTab = "overview" | "users" | "packages" | "airdrops" | "announcements" | "tickets" | "economy" | "analytics" | "audit" | "platform" | "projects";
+type AdminTab = "overview" | "users" | "projects" | "bots" | "badge-requests" | "packages" | "airdrops" | "announcements" | "tickets" | "economy" | "analytics" | "audit" | "platform";
 
 export function AdminDashboard() {
   const [tab, setTab] = useState<AdminTab>("overview");
@@ -968,13 +1468,15 @@ export function AdminDashboard() {
     { id: "overview", label: "Overview", icon: Activity },
     { id: "users", label: "Users", icon: Users },
     { id: "projects", label: "Projects", icon: Server },
+    { id: "bots", label: "Bots", icon: Bot },
+    { id: "badge-requests", label: "Badges", icon: BadgeCheck },
     { id: "economy", label: "Economy", icon: DollarSign },
     { id: "packages", label: "Packages", icon: Package },
     { id: "airdrops", label: "Airdrops", icon: Gift },
-    { id: "announcements", label: "Announcements", icon: Megaphone },
+    { id: "announcements", label: "Posts", icon: Megaphone },
     { id: "tickets", label: "Support", icon: LifeBuoy },
     { id: "analytics", label: "Analytics", icon: BarChart2 },
-    { id: "audit", label: "Audit Log", icon: ClipboardList },
+    { id: "audit", label: "Audit", icon: ClipboardList },
     { id: "platform", label: "Platform", icon: Settings },
   ];
 
@@ -1097,6 +1599,8 @@ export function AdminDashboard() {
       )}
 
       {tab === "projects" && <AdminProjectsTab />}
+      {tab === "bots" && <BotsTab />}
+      {tab === "badge-requests" && <BadgeRequestsTab />}
       {tab === "economy" && <EconomyTab />}
       {tab === "analytics" && <AnalyticsTab />}
       {tab === "audit" && <AuditTab />}

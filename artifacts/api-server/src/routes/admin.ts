@@ -15,6 +15,7 @@ import {
   platformSettingsTable,
   promoCodesTable,
   referralConfigTable,
+  badgeRequestsTable,
 } from "@workspace/db";
 import { eq, desc, and, ilike, sql, gte, count as countFn, or } from "drizzle-orm";
 import { requireAuth, requireAdmin } from "../lib/auth.js";
@@ -511,6 +512,53 @@ router.post("/emergency/broadcast", async (req, res): Promise<void> => {
     await db.insert(notificationsTable).values({ userId: u.id, title, message, type: type || "warning", category: "system" });
   }
   res.json({ success: true, sent: users.length });
+});
+
+// GET /admin/badge-requests
+router.get("/badge-requests", async (req, res): Promise<void> => {
+  const status = req.query.status as string | undefined;
+  const rows = await db
+    .select({
+      id: badgeRequestsTable.id,
+      reason: badgeRequestsTable.reason,
+      status: badgeRequestsTable.status,
+      adminNote: badgeRequestsTable.adminNote,
+      reviewedAt: badgeRequestsTable.reviewedAt,
+      createdAt: badgeRequestsTable.createdAt,
+      userId: badgeRequestsTable.userId,
+      username: usersTable.username,
+      emailVerified: usersTable.emailVerified,
+      coins: usersTable.coins,
+    })
+    .from(badgeRequestsTable)
+    .leftJoin(usersTable, eq(badgeRequestsTable.userId, usersTable.id))
+    .where(status ? eq(badgeRequestsTable.status, status) : undefined)
+    .orderBy(desc(badgeRequestsTable.createdAt))
+    .limit(100);
+  res.json(rows);
+});
+
+// POST /admin/badge-requests/:id/approve
+router.post("/badge-requests/:id/approve", async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const { adminNote } = req.body;
+  const [req2] = await db.select().from(badgeRequestsTable).where(eq(badgeRequestsTable.id, id)).limit(1);
+  if (!req2) { res.status(404).json({ error: "Not found" }); return; }
+  await db.update(badgeRequestsTable).set({ status: "approved", adminNote, reviewedBy: req.user!.id, reviewedAt: new Date() }).where(eq(badgeRequestsTable.id, id));
+  await db.update(usersTable).set({ emailVerified: true }).where(eq(usersTable.id, req2.userId));
+  await createNotification(req2.userId, "✅ Verification Badge Approved", adminNote ? `Your badge request was approved: ${adminNote}` : "Your verification badge has been granted! You now have a blue badge on your profile.", "success", "system");
+  res.json({ success: true });
+});
+
+// POST /admin/badge-requests/:id/deny
+router.post("/badge-requests/:id/deny", async (req, res): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const { adminNote } = req.body;
+  const [req2] = await db.select().from(badgeRequestsTable).where(eq(badgeRequestsTable.id, id)).limit(1);
+  if (!req2) { res.status(404).json({ error: "Not found" }); return; }
+  await db.update(badgeRequestsTable).set({ status: "denied", adminNote, reviewedBy: req.user!.id, reviewedAt: new Date() }).where(eq(badgeRequestsTable.id, id));
+  await createNotification(req2.userId, "❌ Verification Badge Denied", adminNote ? `Your badge request was denied: ${adminNote}` : "Your verification badge request was not approved at this time.", "error", "system");
+  res.json({ success: true });
 });
 
 export default router;
