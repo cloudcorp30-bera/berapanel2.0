@@ -8,16 +8,20 @@ import { Button } from "@/components/ui/Button";
 import {
   Coins as CoinsIcon, Send, Trophy, CheckCircle2, Flame,
   ShoppingCart, Tag, Gift, History, ArrowUpRight, ArrowDownLeft, Crown,
-  Medal, Users, Link, Copy, Star, Award
+  Medal, Users, Link, Copy, Star, Award, BadgeCheck, Clock, CheckSquare
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
+import { useGetMe } from "@workspace/api-client-react";
 
 const BASE = "/api/brucepanel";
-function apiFetch(path: string) {
+function apiFetch(path: string, opts?: RequestInit) {
   const token = localStorage.getItem("token");
-  return fetch(`${BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+  return fetch(`${BASE}${path}`, {
+    ...opts,
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts?.headers || {}) },
+  }).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText); return r.json(); });
 }
 
 type Tab = "overview" | "buy" | "earn" | "transfer" | "history" | "leaderboard" | "referrals" | "badges";
@@ -91,6 +95,115 @@ function PayHeroBuyModal({ pkg, onClose, onSuccess }: { pkg: any; onClose: () =>
           </form>
         )}
       </div>
+    </div>
+  );
+}
+
+function BadgesTab({ badges }: { badges: any[] }) {
+  const { data: me } = useGetMe();
+  const [badgeRequest, setBadgeRequest] = useState<any>(undefined);
+  const [showRequestForm, setShowRequestForm] = useState(false);
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    apiFetch("/account/badge-request").then(d => setBadgeRequest(d)).catch(() => setBadgeRequest(null));
+  }, []);
+
+  const submitRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const data = await apiFetch("/account/badge-request", { method: "POST", body: JSON.stringify({ reason }) });
+      setBadgeRequest(data);
+      setShowRequestForm(false);
+      toast({ title: "Request submitted! ✅", description: "The admin will review your verification badge request." });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally { setSubmitting(false); }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Verification Badge Request Card */}
+      <div className={`glass-panel rounded-2xl border p-5 ${me?.emailVerified ? "border-blue-500/30 bg-blue-500/5" : "border-border"}`}>
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center">
+            <BadgeCheck className={`w-5 h-5 ${me?.emailVerified ? "text-blue-400" : "text-muted-foreground"}`} />
+          </div>
+          <div>
+            <h3 className="font-bold text-sm">Verification Badge</h3>
+            <p className="text-xs text-muted-foreground">Blue checkmark shown on your profile</p>
+          </div>
+        </div>
+
+        {me?.emailVerified ? (
+          <div className="flex items-center gap-2 text-blue-400 text-sm font-semibold">
+            <CheckSquare className="w-4 h-4" /> You are verified! Your blue badge is active.
+          </div>
+        ) : badgeRequest === undefined ? (
+          <div className="h-8 bg-secondary rounded animate-pulse" />
+        ) : badgeRequest?.status === "pending" ? (
+          <div className="flex items-center gap-2 text-yellow-400 text-sm">
+            <Clock className="w-4 h-4" /> Request pending review by admin.
+            <span className="text-xs text-muted-foreground">"{badgeRequest.reason}"</span>
+          </div>
+        ) : badgeRequest?.status === "denied" ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-destructive">Previous request denied. {badgeRequest.adminNote && `Reason: ${badgeRequest.adminNote}`}</p>
+            {!showRequestForm && <Button size="sm" variant="outline" onClick={() => setShowRequestForm(true)} className="w-fit text-xs">Request Again</Button>}
+          </div>
+        ) : !showRequestForm ? (
+          <Button size="sm" onClick={() => setShowRequestForm(true)} className="gap-2 bg-blue-600 hover:bg-blue-500 border-none text-white">
+            <BadgeCheck className="w-4 h-4" /> Request Verification Badge
+          </Button>
+        ) : null}
+
+        {showRequestForm && !me?.emailVerified && badgeRequest?.status !== "pending" && (
+          <form onSubmit={submitRequest} className="mt-3 flex flex-col gap-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Why do you deserve a verification badge?</label>
+              <textarea required minLength={10} value={reason} onChange={e => setReason(e.target.value)} rows={3}
+                placeholder="Tell us about yourself, your projects, or why you should be verified..."
+                className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none" />
+            </div>
+            <div className="flex gap-2">
+              <Button type="submit" size="sm" className="flex-1 bg-blue-600 hover:bg-blue-500 border-none text-white" isLoading={submitting}>Submit Request</Button>
+              <Button type="button" size="sm" variant="outline" className="flex-1" onClick={() => setShowRequestForm(false)}>Cancel</Button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      <p className="text-muted-foreground text-sm">Earn badges by completing milestones and achievements on BeraPanel.</p>
+      {badges.length === 0 ? (
+        <div className="glass-panel rounded-2xl p-16 text-center border border-border">
+          <Award className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
+          <h3 className="text-xl font-bold mb-2">No Achievement Badges Yet</h3>
+          <p className="text-muted-foreground">Keep using BeraPanel to earn badges!</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          {badges.map((badge: any) => (
+            <div key={badge.id} className={`glass-panel rounded-2xl p-5 border text-center transition-all ${badge.earned ? "border-yellow-500/30 bg-yellow-500/5" : "border-border opacity-50"}`}>
+              <div className="text-4xl mb-3">{badge.icon || "🏅"}</div>
+              <h4 className="font-bold text-sm mb-1">{badge.name}</h4>
+              <p className="text-xs text-muted-foreground mb-2">{badge.description}</p>
+              {badge.earned ? (
+                <span className="text-xs text-yellow-400 font-bold">✓ Earned</span>
+              ) : (
+                <div className="mt-2">
+                  <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                    <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(100, (badge.progress || 0) / (badge.total || 1) * 100)}%` }} />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">{badge.progress || 0}/{badge.total || "?"}</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -466,38 +579,7 @@ export function CoinsPage() {
       )}
 
       {/* Badges */}
-      {activeTab === "badges" && (
-        <div className="space-y-4">
-          <p className="text-muted-foreground">Earn badges by completing milestones and achievements on BeraPanel.</p>
-          {badges.length === 0 ? (
-            <div className="glass-panel rounded-2xl p-16 text-center border border-border">
-              <Award className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
-              <h3 className="text-xl font-bold mb-2">No Badges Yet</h3>
-              <p className="text-muted-foreground">Keep using BeraPanel to earn badges!</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {badges.map((badge: any) => (
-                <div key={badge.id} className={`glass-panel rounded-2xl p-5 border text-center transition-all ${badge.earned ? "border-yellow-500/30 bg-yellow-500/5" : "border-border opacity-50"}`}>
-                  <div className="text-5xl mb-3">{badge.icon || "🏅"}</div>
-                  <h4 className="font-bold text-sm mb-1">{badge.name}</h4>
-                  <p className="text-xs text-muted-foreground mb-2">{badge.description}</p>
-                  {badge.earned ? (
-                    <span className="text-xs text-yellow-400 font-bold">✓ Earned</span>
-                  ) : (
-                    <div className="mt-2">
-                      <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
-                        <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(100, (badge.progress || 0) / (badge.total || 1) * 100)}%` }} />
-                      </div>
-                      <p className="text-[10px] text-muted-foreground mt-1">{badge.progress || 0}/{badge.total || "?"}</p>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {activeTab === "badges" && <BadgesTab badges={badges} />}
 
       {/* History */}
       {activeTab === "history" && (

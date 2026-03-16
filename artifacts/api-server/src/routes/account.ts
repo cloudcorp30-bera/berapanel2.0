@@ -9,6 +9,7 @@ import {
   supportMessagesTable,
   apiKeysTable,
   auditLogTable,
+  badgeRequestsTable,
 } from "@workspace/db";
 import { eq, and, desc, or } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
@@ -198,6 +199,35 @@ router.get("/status", async (req, res): Promise<void> => {
     version: "2.0.0",
     platform: "BeraPanel",
   });
+});
+
+// POST /account/badge-request — user submits a verification badge request
+router.post("/account/badge-request", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.user!.id;
+  const { reason } = req.body;
+  if (!reason || reason.trim().length < 10) {
+    res.status(400).json({ error: "Please provide a reason (at least 10 characters)" });
+    return;
+  }
+  const existing = await db.select().from(badgeRequestsTable)
+    .where(and(eq(badgeRequestsTable.userId, userId), eq(badgeRequestsTable.status, "pending")))
+    .limit(1);
+  if (existing.length > 0) {
+    res.status(400).json({ error: "You already have a pending badge request" });
+    return;
+  }
+  const [row] = await db.insert(badgeRequestsTable).values({ userId, reason: reason.trim() }).returning();
+  res.status(201).json(row);
+});
+
+// GET /account/badge-request — get user's own badge request status
+router.get("/account/badge-request", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.user!.id;
+  const [row] = await db.select().from(badgeRequestsTable)
+    .where(eq(badgeRequestsTable.userId, userId))
+    .orderBy(desc(badgeRequestsTable.createdAt))
+    .limit(1);
+  res.json(row || null);
 });
 
 export default router;

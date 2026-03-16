@@ -140,6 +140,19 @@ export const adminNotesTable = pgTable("admin_notes", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const badgeRequestsTable = pgTable("badge_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "cascade" }).notNull(),
+  reason: text("reason"),
+  status: text("status").default("pending").notNull(),
+  adminNote: text("admin_note"),
+  reviewedBy: uuid("reviewed_by").references(() => usersTable.id),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type BadgeRequest = typeof badgeRequestsTable.$inferSelect;
+
 export const customDomainsTable = pgTable("custom_domains", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").notNull(),
