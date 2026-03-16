@@ -1,11 +1,20 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
-import { usersTable, sessionsTable } from "@workspace/db";
+import { usersTable, sessionsTable, referralsTable, referralConfigTable } from "@workspace/db";
 import { eq, and, gt } from "drizzle-orm";
 import { signToken, verifyToken, requireAuth } from "../lib/auth.js";
 import { awardCoins } from "../lib/coins.js";
 import { v4 as uuidv4 } from "uuid";
+
+async function getReferralBonus(): Promise<number> {
+  try {
+    const [row] = await db.select().from(referralConfigTable).where(eq(referralConfigTable.key, "signup_coins")).limit(1);
+    if (row && typeof row.value === "number") return row.value;
+    if (row && row.value !== null) return Number(row.value) || 10;
+  } catch {}
+  return 10;
+}
 
 const router: IRouter = Router();
 
@@ -71,7 +80,14 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
   // Award referrer
   if (referredById) {
-    await awardCoins(referredById, 50, "referral", `Referral bonus: ${username} signed up`);
+    const bonus = await getReferralBonus();
+    await awardCoins(referredById, bonus, "referral", `Referral bonus: ${username} signed up with your code`);
+    await db.insert(referralsTable).values({
+      referrerId: referredById,
+      refereeId: user.id,
+      coinsAwarded: bonus,
+      milestone: "signup",
+    });
   }
 
   const token = signToken({ id: user.id, username: user.username, role: user.role });
