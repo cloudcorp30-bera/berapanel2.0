@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import { 
   useGetProject, useDeployProject, useStartProject, useStopProject, useRestartProject,
-  useGetProjectEnv, useUpdateProjectEnv, useGetProjectLogs, useDeleteProject
+  useGetProjectEnv, useUpdateProjectEnv, useGetProjectLogs, useDeleteProject,
+  useListCronJobs, useCreateCronJob, useUpdateCronJob, useDeleteCronJob, useGetProjectMetrics
 } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTerminal } from "@/hooks/use-terminal";
@@ -13,7 +14,8 @@ import Editor from "@monaco-editor/react";
 import { 
   Activity, Play, Square, RotateCw, TerminalSquare, FileCode, Settings, FileText, 
   Rocket, Trash2, Save, Globe, Moon, Sun, Copy, Link as LinkIcon, ExternalLink, Check,
-  GitBranch, Clock, Shield, History, Wifi, WifiOff, AlertTriangle, CheckCircle, XCircle
+  GitBranch, Clock, Shield, History, Wifi, WifiOff, AlertTriangle, CheckCircle, XCircle,
+  AlarmClock, Plus, X, Edit
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useQueryClient } from "@tanstack/react-query";
@@ -148,6 +150,7 @@ export function ProjectDetail() {
           { id: 'history', label: 'Deploys', icon: History },
           { id: 'terminal', label: 'Terminal', icon: TerminalSquare },
           { id: 'env', label: 'Variables', icon: Settings },
+          { id: 'crons', label: 'Crons', icon: AlarmClock },
           { id: 'editor', label: 'Code', icon: FileCode },
           { id: 'settings', label: 'Settings', icon: Shield },
         ].map(t => (
@@ -165,9 +168,164 @@ export function ProjectDetail() {
         {activeTab === 'history' && <DeployHistoryTab projectId={project.id} />}
         {activeTab === 'terminal' && <TerminalTab projectId={project.id} />}
         {activeTab === 'env' && <EnvTab projectId={project.id} />}
+        {activeTab === 'crons' && <CronsTab projectId={project.id} />}
         {activeTab === 'editor' && <div className="glass-panel p-8 rounded-2xl flex items-center justify-center text-muted-foreground">File editor available via Terminal tab.</div>}
         {activeTab === 'settings' && <SettingsTab project={project} onRefresh={refetch} onDelete={() => navigate("/projects")} />}
       </div>
+    </div>
+  );
+}
+
+// ─── Crons Tab ────────────────────────────────────────────────────────────────
+function CronsTab({ projectId }: { projectId: string }) {
+  const { data: crons, isLoading, refetch } = useListCronJobs(projectId);
+  const createMut = useCreateCronJob();
+  const updateMut = useUpdateCronJob();
+  const deleteMut = useDeleteCronJob();
+  const { toast } = useToast();
+  const [showForm, setShowForm] = useState(false);
+  const [editCron, setEditCron] = useState<any>(null);
+  const [form, setForm] = useState({ name: "", schedule: "", command: "", enabled: true });
+
+  const resetForm = () => { setForm({ name: "", schedule: "", command: "", enabled: true }); setEditCron(null); setShowForm(false); };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editCron) {
+      updateMut.mutate({ id: projectId, cronId: editCron.id, data: form }, {
+        onSuccess: () => { toast({ title: "Cron updated!" }); refetch(); resetForm(); },
+        onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" })
+      });
+    } else {
+      createMut.mutate({ id: projectId, data: form }, {
+        onSuccess: () => { toast({ title: "Cron created!" }); refetch(); resetForm(); },
+        onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" })
+      });
+    }
+  };
+
+  const handleDelete = (cronId: string) => {
+    if (!confirm("Delete this cron job?")) return;
+    deleteMut.mutate({ id: projectId, cronId }, {
+      onSuccess: () => { toast({ title: "Cron deleted" }); refetch(); },
+      onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" })
+    });
+  };
+
+  const toggleCron = (cron: any) => {
+    updateMut.mutate({ id: projectId, cronId: cron.id, data: { ...cron, enabled: !cron.enabled } }, {
+      onSuccess: () => refetch(),
+    });
+  };
+
+  const cronExamples = [
+    { label: "Every minute", value: "* * * * *" },
+    { label: "Every hour", value: "0 * * * *" },
+    { label: "Daily at midnight", value: "0 0 * * *" },
+    { label: "Every Sunday", value: "0 0 * * 0" },
+  ];
+
+  return (
+    <div className="space-y-5 overflow-y-auto pb-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-bold">Cron Jobs</h3>
+          <p className="text-sm text-muted-foreground">Schedule recurring tasks for your project.</p>
+        </div>
+        <Button onClick={() => { setShowForm(true); setEditCron(null); setForm({ name: "", schedule: "", command: "", enabled: true }); }} className="gap-2">
+          <Plus className="w-4 h-4" /> New Cron
+        </Button>
+      </div>
+
+      {(showForm || editCron) && (
+        <div className="glass-panel rounded-2xl border border-primary/20 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="font-bold">{editCron ? "Edit Cron Job" : "New Cron Job"}</h4>
+            <button onClick={resetForm}><X className="w-4 h-4 text-muted-foreground" /></button>
+          </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">Name</label>
+                <input required type="text" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                  placeholder="e.g. cleanup-task"
+                  className="w-full px-3 py-2 bg-secondary border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">Schedule (cron expression)</label>
+                <input required type="text" value={form.schedule} onChange={e => setForm(p => ({ ...p, schedule: e.target.value }))}
+                  placeholder="* * * * *"
+                  className="w-full px-3 py-2 bg-secondary border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Command</label>
+              <input required type="text" value={form.command} onChange={e => setForm(p => ({ ...p, command: e.target.value }))}
+                placeholder="node scripts/cleanup.js"
+                className="w-full px-3 py-2 bg-secondary border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-muted-foreground">Quick:</span>
+                {cronExamples.map(ex => (
+                  <button key={ex.value} type="button" onClick={() => setForm(p => ({ ...p, schedule: ex.value }))}
+                    className="text-[10px] px-2 py-1 rounded bg-secondary border border-border hover:border-primary/30 transition-colors">
+                    {ex.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={form.enabled} onChange={e => setForm(p => ({ ...p, enabled: e.target.checked }))} />
+              Enabled
+            </label>
+            <div className="flex gap-3">
+              <Button type="submit" isLoading={createMut.isPending || updateMut.isPending} className="flex-1">
+                {editCron ? "Save Changes" : "Create Cron Job"}
+              </Button>
+              <Button type="button" variant="outline" onClick={resetForm}>Cancel</Button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="space-y-3">{[...Array(3)].map((_, i) => <div key={i} className="h-16 bg-secondary rounded-xl animate-pulse" />)}</div>
+      ) : !crons || (crons as any[]).length === 0 ? (
+        <div className="glass-panel rounded-2xl p-12 text-center border border-dashed border-border">
+          <AlarmClock className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+          <h3 className="font-bold mb-2">No Cron Jobs</h3>
+          <p className="text-muted-foreground text-sm">Schedule recurring tasks to run automatically.</p>
+        </div>
+      ) : (
+        <div className="glass-panel rounded-2xl border border-border overflow-hidden">
+          <table className="w-full text-left">
+            <thead><tr className="border-b border-border bg-secondary/30">
+              {["Name", "Schedule", "Command", "Status", "Last Run", ""].map(h => <th key={h} className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase">{h}</th>)}
+            </tr></thead>
+            <tbody className="divide-y divide-border/50">
+              {(crons as any[]).map((cron: any) => (
+                <tr key={cron.id} className="hover:bg-secondary/30 transition-colors">
+                  <td className="px-4 py-3 font-medium text-sm">{cron.name}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-accent bg-accent/5 rounded">{cron.schedule}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground max-w-[200px] truncate">{cron.command}</td>
+                  <td className="px-4 py-3">
+                    <button onClick={() => toggleCron(cron)} className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-colors ${cron.enabled ? "bg-green-500/10 border-green-500/30 text-green-400 hover:bg-green-500/20" : "bg-secondary border-border text-muted-foreground hover:border-primary/30"}`}>
+                      {cron.enabled ? "Active" : "Disabled"}
+                    </button>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{cron.lastRunAt ? new Date(cron.lastRunAt).toLocaleString() : "Never"}</td>
+                  <td className="px-4 py-3 flex items-center gap-1">
+                    <button onClick={() => { setEditCron(cron); setForm({ name: cron.name, schedule: cron.schedule, command: cron.command, enabled: cron.enabled }); setShowForm(false); }}
+                      className="p-1.5 hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground transition-colors"><Edit className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleDelete(cron.id)} className="p-1.5 hover:bg-destructive/10 rounded-lg text-muted-foreground hover:text-destructive transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
