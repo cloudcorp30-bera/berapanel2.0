@@ -26,7 +26,7 @@ export const projectsTable = pgTable("projects", {
   webhookSecret: text("webhook_secret"),
   healthCheckUrl: text("health_check_url"),
   healthCheckInterval: integer("health_check_interval").default(60).notNull(),
-  autoRestart: boolean("auto_restart").default(true).notNull(),
+  autoRestart: boolean("auto_restart").default(false).notNull(),
   sleepEnabled: boolean("sleep_enabled").default(false).notNull(),
   sleepAfterMinutes: integer("sleep_after_minutes").default(30).notNull(),
   lastRequestAt: timestamp("last_request_at", { withTimezone: true }),
@@ -103,3 +103,28 @@ export const projectCollaboratorsTable = pgTable("project_collaborators", {
 });
 
 export type ProjectCollaborator = typeof projectCollaboratorsTable.$inferSelect;
+
+export const projectWebhooksTable = pgTable("project_webhooks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").references(() => projectsTable.id, { onDelete: "cascade" }).notNull(),
+  url: text("url").notNull(),
+  events: text("events").array().default([]),
+  secret: text("secret"),
+  enabled: boolean("enabled").default(true).notNull(),
+  lastDelivery: timestamp("last_delivery", { withTimezone: true }),
+  lastStatus: integer("last_status"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type ProjectWebhook = typeof projectWebhooksTable.$inferSelect;
+
+export const teamMembersTable = pgTable("team_members", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").references(() => projectsTable.id, { onDelete: "cascade" }).notNull(),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "cascade" }).notNull(),
+  role: text("role").default("viewer").notNull(),
+  invitedBy: uuid("invited_by"),
+  joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type TeamMember = typeof teamMembersTable.$inferSelect;
