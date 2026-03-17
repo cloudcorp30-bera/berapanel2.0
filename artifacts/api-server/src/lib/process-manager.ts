@@ -158,10 +158,11 @@ export async function deployFromGit(
       });
     };
 
+    const gitEnv = `GIT_ASKPASS=echo GIT_TERMINAL_PROMPT=0`;
     if (fs.existsSync(path.join(dir, ".git"))) {
-      await runCmd(`git fetch origin && git checkout ${project.branch} && git pull origin ${project.branch}`);
+      await runCmd(`${gitEnv} git fetch origin && git checkout ${project.branch} && ${gitEnv} git pull origin ${project.branch}`);
     } else {
-      await runCmd(`git clone --depth 1 --branch ${project.branch} ${repoUrl} .`);
+      await runCmd(`${gitEnv} git clone --depth 1 --branch ${project.branch} ${repoUrl} .`);
     }
 
     await runCmd(project.installCommand);
