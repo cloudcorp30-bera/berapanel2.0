@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { projectsTable } from "@workspace/db";
 import { eq, or } from "drizzle-orm";
 import { startProcess, getProjectDir } from "./lib/process-manager.js";
+import { runSeed } from "./lib/seed.js";
 import fs from "fs";
 
 // Global safety net — log uncaught errors instead of crashing silently
@@ -31,6 +32,8 @@ if (Number.isNaN(port) || port <= 0) {
 
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
+  // Seed default data (bot templates, coin packages) — safe to run every startup (upsert)
+  runSeed().catch((e) => console.error("[seed] failed:", e));
   // Auto-recover projects that were running before server restart
   autoRecoverProjects();
 });
