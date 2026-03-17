@@ -6,7 +6,7 @@ import {
   projectsTable,
   usersTable,
 } from "@workspace/db";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
 import { spendCoins } from "../lib/coins.js";
 import { getProjectDir } from "../lib/process-manager.js";
@@ -134,8 +134,18 @@ router.post("/bots/:id/review", requireAuth, async (req, res): Promise<void> => 
 // GET /bots/:id/reviews
 router.get("/bots/:id/reviews", async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const reviews = await db.select().from(botReviewsTable).where(eq(botReviewsTable.templateId, id)).orderBy(desc(botReviewsTable.createdAt));
-  res.json(reviews);
+  const reviews = await db.select({
+    id: botReviewsTable.id,
+    templateId: botReviewsTable.templateId,
+    rating: botReviewsTable.rating,
+    comment: botReviewsTable.comment,
+    createdAt: botReviewsTable.createdAt,
+    username: usersTable.username,
+  }).from(botReviewsTable)
+    .leftJoin(usersTable, eq(botReviewsTable.userId, usersTable.id))
+    .where(eq(botReviewsTable.templateId, id))
+    .orderBy(desc(botReviewsTable.createdAt));
+  res.json({ reviews });
 });
 
 export default router;
