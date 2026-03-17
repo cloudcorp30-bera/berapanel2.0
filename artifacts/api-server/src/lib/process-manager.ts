@@ -113,7 +113,7 @@ function generateTemplateFiles(dir: string, templateId: string, envVars: Record<
     const zipCandidates = [
       path.join(process.cwd(), "artifacts/api-server/bot_zips/atassa-md.zip"),
       path.join(process.cwd(), "bot_zips/atassa-md.zip"),
-      path.join(__dirname, "../../bot_zips/atassa-md.zip"),
+      "/home/runner/workspace/artifacts/api-server/bot_zips/atassa-md.zip",
     ];
     const zipPath = zipCandidates.find(p => fs.existsSync(p));
     if (!zipPath) {
