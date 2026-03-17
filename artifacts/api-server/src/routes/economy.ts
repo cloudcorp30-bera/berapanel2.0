@@ -122,43 +122,68 @@ router.post("/subscribe/initiate", requireAuth, async (req, res): Promise<void> 
     description: `Purchase: ${pkg.name}`,
   }).returning();
 
+  // Normalize phone to 254XXXXXXXXX (Safaricom / Kenyan number format)
+  function normalizePhone(raw: string): string {
+    const digits = raw.replace(/\D/g, "");
+    if (digits.startsWith("254") && digits.length === 12) return digits; // already correct
+    if (digits.startsWith("0") && digits.length === 10) return "254" + digits.slice(1); // 07xx / 01xx
+    if (digits.length === 9 && (digits.startsWith("7") || digits.startsWith("1"))) return "254" + digits; // 7XXXXXXXX
+    return digits; // return as-is, let PayHero reject it with a clear error
+  }
+  const normalizedPhone = normalizePhone(phone);
+
   // Initiate PayHero STK Push
   const payheroAuth = process.env.PAYHERO_AUTH;
-  const channelId = process.env.PAYHERO_CHANNEL_ID || "3762";
+  const channelId = process.env.PAYHERO_CHANNEL_ID || "3763";
   const baseUrl = process.env.PAYHERO_BASE || "https://backend.payhero.co.ke/api/v2";
   const callbackUrl = `${process.env.BASE_URL || "https://bruce-panel-1.replit.app"}/api/brucepanel/subscribe/callback`;
 
-  if (payheroAuth) {
-    try {
-      const stkRes = await fetch(`${baseUrl}/payments`, {
-        method: "POST",
-        headers: {
-          "Authorization": payheroAuth,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          amount: pkg.priceKsh,
-          phone_number: phone,
-          channel_id: parseInt(channelId),
-          provider: "m-pesa",
-          external_reference: tx.id,
-          customer_name: req.user!.username,
-          callback_url: callbackUrl,
-        }),
-      });
-      const stkData = await stkRes.json() as any;
-      const checkoutRequestId = stkData?.CheckoutRequestID || tx.id;
-      await db.update(transactionsTable).set({ checkoutRequestId }).where(eq(transactionsTable.id, tx.id));
-      res.json({ checkoutRequestId, transactionId: tx.id, message: "STK Push sent to your phone" });
-      return;
-    } catch {}
+  if (!payheroAuth) {
+    // Demo mode (no PayHero credentials configured)
+    const coins = (pkg.coins || 0) + (pkg.bonusCoins || 0);
+    await awardCoins(req.user!.id, coins, "purchase", `Purchased ${pkg.name} (${coins} coins)`);
+    await db.update(transactionsTable).set({ status: "completed", checkoutRequestId: tx.id }).where(eq(transactionsTable.id, tx.id));
+    res.json({ checkoutRequestId: tx.id, transactionId: tx.id, message: "Payment processed (demo mode)" });
+    return;
   }
 
-  // Demo mode: auto-complete
-  const coins = (pkg.coins || 0) + (pkg.bonusCoins || 0);
-  await awardCoins(req.user!.id, coins, "purchase", `Purchased ${pkg.name} (${coins} coins)`);
-  await db.update(transactionsTable).set({ status: "completed", checkoutRequestId: tx.id }).where(eq(transactionsTable.id, tx.id));
-  res.json({ checkoutRequestId: tx.id, transactionId: tx.id, message: "Payment processed (demo mode)" });
+  try {
+    const stkRes = await fetch(`${baseUrl}/payments`, {
+      method: "POST",
+      headers: {
+        "Authorization": payheroAuth,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        amount: pkg.priceKsh,
+        phone_number: normalizedPhone,
+        channel_id: parseInt(channelId),
+        provider: "m-pesa",
+        external_reference: tx.id,
+        customer_name: req.user!.username,
+        callback_url: callbackUrl,
+      }),
+    });
+
+    const stkData = await stkRes.json() as any;
+    console.log("[PayHero] STK response:", JSON.stringify(stkData));
+
+    if (!stkRes.ok) {
+      const errMsg = stkData?.message || stkData?.error || `PayHero error ${stkRes.status}`;
+      console.error("[PayHero] STK push failed:", errMsg);
+      await db.update(transactionsTable).set({ status: "failed" }).where(eq(transactionsTable.id, tx.id));
+      res.status(502).json({ error: `Payment gateway error: ${errMsg}` });
+      return;
+    }
+
+    const checkoutRequestId = stkData?.CheckoutRequestID || tx.id;
+    await db.update(transactionsTable).set({ checkoutRequestId }).where(eq(transactionsTable.id, tx.id));
+    res.json({ checkoutRequestId, transactionId: tx.id, message: "STK Push sent to your phone. Enter your M-Pesa PIN to complete payment." });
+  } catch (err: any) {
+    console.error("[PayHero] STK push exception:", err.message);
+    await db.update(transactionsTable).set({ status: "failed" }).where(eq(transactionsTable.id, tx.id));
+    res.status(500).json({ error: "Failed to initiate payment. Please try again." });
+  }
 });
 
 // GET /subscribe/status/:checkoutRequestId

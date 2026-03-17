@@ -10,7 +10,7 @@ const DEFAULT_BOT_TEMPLATES = [
       "Premium WhatsApp Multi-Device bot by GiftedTech. Features: auto-reply, group management, media downloader, games, AI assistant, and more. Powered by gifted-baileys.",
     category: "whatsapp",
     icon: "💬",
-    repoUrl: "https://github.com/GiftedTech/Atassa-md",
+    repoUrl: "",
     branch: "main",
     startCommand: "node index.js",
     installCommand: "npm install --legacy-peer-deps",

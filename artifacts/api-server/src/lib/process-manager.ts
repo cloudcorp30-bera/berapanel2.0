@@ -3,6 +3,7 @@ import type { ChildProcess } from "child_process";
 import type { Response } from "express";
 import path from "path";
 import fs from "fs";
+import AdmZip from "adm-zip";
 import { db } from "@workspace/db";
 import { projectsTable, deployHistoryTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -51,6 +52,7 @@ const processes = new Map<string, ChildProcess>();
 const logBuffers = new Map<string, string[]>();
 const sseClients = new Map<string, Set<Response>>();
 const usedPorts = new Set<number>();
+const deployingProjects = new Set<string>(); // lock: skip auto-restart while deploying
 
 function assignPort(): number {
   for (let p = PORT_MIN; p <= PORT_MAX; p++) {
@@ -104,6 +106,48 @@ export function getLiveUrl(projectId: string): string {
 function generateTemplateFiles(dir: string, templateId: string, envVars: Record<string, string>) {
   const write = (name: string, content: string) =>
     fs.writeFileSync(path.join(dir, name), content, "utf8");
+
+  // ── ATASSA MD — extract from bundled zip ────────────────────────────────────
+  if (templateId === "d3c85798-3884-4a20-980f-74d9f32a4eb3") {
+    // Resolve zip path: bundled with the api-server artifact
+    const zipCandidates = [
+      path.join(process.cwd(), "artifacts/api-server/bot_zips/atassa-md.zip"),
+      path.join(process.cwd(), "bot_zips/atassa-md.zip"),
+      path.join(__dirname, "../../bot_zips/atassa-md.zip"),
+    ];
+    const zipPath = zipCandidates.find(p => fs.existsSync(p));
+    if (!zipPath) {
+      throw new Error("ATASSA zip file not found. Please contact support.");
+    }
+
+    const zip = new AdmZip(zipPath);
+    const entries = zip.getEntries();
+
+    // The zip may have a top-level folder — detect it
+    const topFolders = new Set<string>();
+    for (const e of entries) {
+      const parts = e.entryName.split("/");
+      if (parts.length > 1 && parts[0]) topFolders.add(parts[0]);
+    }
+    const topFolder = topFolders.size === 1 ? [...topFolders][0] + "/" : "";
+
+    // Extract all entries, stripping the top-level folder
+    for (const entry of entries) {
+      if (entry.isDirectory) continue;
+      const relPath = topFolder ? entry.entryName.slice(topFolder.length) : entry.entryName;
+      if (!relPath) continue;
+      const destPath = path.join(dir, relPath);
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+      fs.writeFileSync(destPath, entry.getData());
+    }
+
+    // Write/overwrite .env with user-supplied env vars
+    const envContent = Object.entries(envVars)
+      .map(([k, v]) => `${k}=${v}`)
+      .join("\n");
+    write(".env", envContent);
+    return;
+  }
 
   // ── Telegram Bot Starter ────────────────────────────────────────────────────
   if (templateId === "f7d17257-853d-456e-88ff-d275c81e575a") {
@@ -676,6 +720,12 @@ export function detectStartCommand(dir: string): string | null {
 }
 
 export async function startProcess(project: { id: string; startCommand: string; envVars: Record<string, string> | null; port: number; autoRestart: boolean }): Promise<void> {
+  // Do not start if a deploy is currently in progress for this project
+  if (deployingProjects.has(project.id)) {
+    console.log(`[pm] Skipping startProcess for ${project.id} — deploy in progress`);
+    return;
+  }
+
   const dir = path.join(PROJECTS_DIR, project.id);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
@@ -707,11 +757,15 @@ export async function startProcess(project: { id: string; startCommand: string; 
       .set({ status: code === 0 ? "stopped" : "error", crashCount: ((project as any).crashCount ?? 0) + 1 })
       .where(eq(projectsTable.id, project.id));
 
-    if (project.autoRestart && code !== 0) {
+    if (project.autoRestart && code !== 0 && !deployingProjects.has(project.id)) {
       const crashCount = ((project as any).crashCount ?? 0) + 1;
       if (crashCount <= 5) {
         broadcastLog(project.id, `[BeraPanel] Auto-restarting in 3s... (attempt ${crashCount}/5)\n`);
-        setTimeout(() => startProcess({ ...project, ...({ crashCount } as any) }), 3000);
+        setTimeout(() => {
+          if (!deployingProjects.has(project.id)) {
+            startProcess({ ...project, ...({ crashCount } as any) });
+          }
+        }, 3000);
       } else {
         broadcastLog(project.id, `[BeraPanel] Too many crashes — stopping auto-restart. Please redeploy.\n`);
         await db.update(projectsTable).set({ status: "error" }).where(eq(projectsTable.id, project.id));
@@ -775,10 +829,19 @@ export async function deployFromGit(
     }
     log(`[BeraPanel] ════════════════════════════════════════\n`);
 
+    // Mark this project as deploying to prevent race-condition auto-restarts
+    deployingProjects.add(project.id);
+    stopProcess(project.id); // Stop any running instance before deploying
+
     const runCmd = (cmd: string): Promise<void> => {
       return new Promise((resolve, reject) => {
         log(`[BeraPanel] $ ${cmd}\n`);
-        const proc = spawn("sh", ["-c", cmd], { cwd: dir, stdio: ["pipe", "pipe", "pipe"] });
+        // Clear Replit git credential helper — not available in production environment
+        const cmdEnv = { ...process.env as Record<string, string> };
+        delete cmdEnv.GIT_ASKPASS;
+        delete cmdEnv.GIT_CREDENTIAL_HELPER;
+        cmdEnv.GIT_TERMINAL_PROMPT = "0";
+        const proc = spawn("sh", ["-c", cmd], { cwd: dir, env: cmdEnv, stdio: ["pipe", "pipe", "pipe"] });
         proc.stdout?.on("data", (d: Buffer) => log(d.toString()));
         proc.stderr?.on("data", (d: Buffer) => log(d.toString()));
         proc.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`Exit ${code}`))));
@@ -880,8 +943,10 @@ export async function deployFromGit(
     log(`[BeraPanel] 🌐 Live URL: ${liveUrl}\n`);
     log(`[BeraPanel] ════════════════════════════════════════\n`);
 
+    deployingProjects.delete(project.id); // Release deploy lock before starting
     return liveUrl;
   } catch (err: any) {
+    deployingProjects.delete(project.id); // Release deploy lock on failure too
     const duration = Math.floor((Date.now() - startTime) / 1000);
     log(`[BeraPanel] ❌ DEPLOY FAILED after ${duration}s: ${err.message}\n`);
     await db.update(projectsTable).set({ status: "error" }).where(eq(projectsTable.id, project.id));
