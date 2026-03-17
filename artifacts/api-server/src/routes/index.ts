@@ -6,6 +6,7 @@ import economyRouter from "./economy.js";
 import marketplaceRouter from "./marketplace.js";
 import accountRouter from "./account.js";
 import adminRouter from "./admin.js";
+import chatRouter from "./chat.js";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use("/brucepanel", economyRouter);
 router.use("/brucepanel", marketplaceRouter);
 router.use("/brucepanel", accountRouter);
 router.use("/brucepanel/admin", adminRouter);
+router.use("/brucepanel", chatRouter);
 
 export default router;
