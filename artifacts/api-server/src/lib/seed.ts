@@ -284,6 +284,11 @@ const DEFAULT_COIN_PACKAGES = [
 
 export async function runSeed(): Promise<void> {
   try {
+    // Ensure bot_template_id column exists (added in v2.1)
+    await db.execute(sql.raw(
+      `ALTER TABLE projects ADD COLUMN IF NOT EXISTS bot_template_id UUID`
+    ));
+
     for (const bot of DEFAULT_BOT_TEMPLATES) {
       // PostgreSQL text[] literal: {tag1,tag2,...}
       const pgTags = `{${bot.tags.map((t) => t.replace(/"/g, '\\"')).join(",")}}`;
