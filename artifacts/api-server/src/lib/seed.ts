@@ -285,6 +285,8 @@ const DEFAULT_COIN_PACKAGES = [
 export async function runSeed(): Promise<void> {
   try {
     for (const bot of DEFAULT_BOT_TEMPLATES) {
+      // PostgreSQL text[] literal: {tag1,tag2,...}
+      const pgTags = `{${bot.tags.map((t) => t.replace(/"/g, '\\"')).join(",")}}`;
       await db.execute(sql`
         INSERT INTO bot_templates (
           id, name, description, category, icon, repo_url, branch,
@@ -302,7 +304,7 @@ export async function runSeed(): Promise<void> {
           ${bot.installCommand},
           ${bot.runtime},
           ${bot.requiredEnvVars}::jsonb,
-          ${JSON.stringify(bot.tags)}::text[],
+          ${pgTags}::text[],
           ${bot.coinCost},
           ${bot.featured},
           ${bot.verified},
