@@ -89,7 +89,7 @@ router.get("/projects/:id", requireAuth, async (req, res): Promise<void> => {
 // PUT /projects/:id/settings
 router.put("/projects/:id/settings", requireAuth, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const allowed = ["name", "description", "startCommand", "branch", "buildCommand", "runtime", "autoRestart", "sleepEnabled", "sleepAfterMinutes", "healthCheckUrl", "memoryLimitMb", "tags", "isPublic", "pinned", "installCommand"];
+  const allowed = ["name", "description", "repoUrl", "startCommand", "branch", "buildCommand", "runtime", "autoRestart", "sleepEnabled", "sleepAfterMinutes", "healthCheckUrl", "memoryLimitMb", "tags", "isPublic", "pinned", "installCommand"];
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
