@@ -213,8 +213,14 @@ export async function startProcess(project: { id: string; startCommand: string; 
       .where(eq(projectsTable.id, project.id));
 
     if (project.autoRestart && code !== 0) {
-      broadcastLog(project.id, `[BeraPanel] Auto-restarting in 3s...\n`);
-      setTimeout(() => startProcess(project), 3000);
+      const crashCount = ((project as any).crashCount ?? 0) + 1;
+      if (crashCount <= 5) {
+        broadcastLog(project.id, `[BeraPanel] Auto-restarting in 3s... (attempt ${crashCount}/5)\n`);
+        setTimeout(() => startProcess({ ...project, ...({ crashCount } as any) }), 3000);
+      } else {
+        broadcastLog(project.id, `[BeraPanel] Too many crashes — stopping auto-restart. Please redeploy.\n`);
+        await db.update(projectsTable).set({ status: "error" }).where(eq(projectsTable.id, project.id));
+      }
     }
   });
 
@@ -278,10 +284,18 @@ export async function deployFromGit(
       });
     };
 
-    // Clone / pull
+    // Clone / pull — handle all directory states robustly
     if (fs.existsSync(path.join(dir, ".git"))) {
-      await runCmd(`git fetch origin && git checkout ${project.branch} && git pull origin ${project.branch}`);
+      // Has git history — clean reset to avoid local changes blocking pull
+      await runCmd(`git fetch origin && git reset --hard origin/${project.branch}`);
     } else {
+      // No .git folder — clear any stale files from a previous failed clone, then clone fresh
+      const existing = fs.readdirSync(dir);
+      if (existing.length > 0) {
+        log(`[BeraPanel] Clearing stale directory (${existing.length} items) for fresh clone...\n`);
+        fs.rmSync(dir, { recursive: true, force: true });
+        fs.mkdirSync(dir, { recursive: true });
+      }
       await runCmd(`git clone --depth 1 --branch ${project.branch} ${repoUrl} .`);
     }
 

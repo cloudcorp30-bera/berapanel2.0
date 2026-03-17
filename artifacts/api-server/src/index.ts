@@ -1,10 +1,11 @@
 import app from "./app";
 import { db } from "@workspace/db";
 import { projectsTable } from "@workspace/db";
-import { eq, or } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { startProcess, getProjectDir } from "./lib/process-manager.js";
 import { runSeed } from "./lib/seed.js";
 import fs from "fs";
+import path from "path";
 
 // Global safety net — log uncaught errors instead of crashing silently
 process.on("uncaughtException", (err) => {
@@ -41,12 +42,17 @@ app.listen(port, () => {
 async function autoRecoverProjects() {
   try {
     const runningProjects = await db.select().from(projectsTable)
-      .where(or(eq(projectsTable.status, "running"), eq(projectsTable.autoRestart, true)));
+      .where(and(eq(projectsTable.status, "running"), eq(projectsTable.autoRestart, true)));
 
     const toRestart = runningProjects.filter(p => {
       if (!p.port || !p.startCommand) return false;
       const dir = getProjectDir(p.id);
-      return fs.existsSync(dir) && fs.readdirSync(dir).length > 0;
+      if (!fs.existsSync(dir) || fs.readdirSync(dir).length === 0) return false;
+      // For Node.js projects, only recover if node_modules is installed
+      if (p.runtime === "node" || (!p.runtime && fs.existsSync(path.join(dir, "package.json")))) {
+        if (!fs.existsSync(path.join(dir, "node_modules"))) return false;
+      }
+      return true;
     });
 
     if (toRestart.length === 0) return;
