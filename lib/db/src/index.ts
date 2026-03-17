@@ -35,7 +35,29 @@ function getConnectionString(): string {
   return "";
 }
 
-export const pool = new Pool({ connectionString: getConnectionString() });
+function buildPoolConfig(): pg.PoolConfig {
+  const connectionString = getConnectionString();
+  const config: pg.PoolConfig = {
+    connectionString,
+    connectionTimeoutMillis: 10000,
+    idleTimeoutMillis: 30000,
+    max: 10,
+  };
+  if (connectionString) {
+    const hasExplicitSsl = /[?&]sslmode=/.test(connectionString);
+    if (!hasExplicitSsl) {
+      config.ssl = { rejectUnauthorized: false };
+    }
+  }
+  return config;
+}
+
+export const pool = new Pool(buildPoolConfig());
+
+pool.on("error", (err) => {
+  console.error("[db] Pool client error (connection was reset by server):", err.message);
+});
+
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";
