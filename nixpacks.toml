@@ -1,8 +1,7 @@
 [phases.setup]
-nixPkgs = ["nodejs_18", "openssl"]
+nixPkgs = ["nodejs_18", "pnpm", "openssl"]
 
 [phases.install]
-nixPkgs = ["nodejs_18", "pnpm", "openssl"]
 cmds = ["pnpm i --no-frozen-lockfile"]
 
 [phases.build]
