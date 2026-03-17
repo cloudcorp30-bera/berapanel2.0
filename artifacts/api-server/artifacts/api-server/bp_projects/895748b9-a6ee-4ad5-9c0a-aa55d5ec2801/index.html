@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Portfolio — BeraPanel Test</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f0f1a; color: #fff; min-height: 100vh; }
+      header { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #06b6d4 100%); padding: 80px 20px; text-align: center; }
+      header h1 { font-size: clamp(2rem, 5vw, 4rem); font-weight: 900; letter-spacing: -1px; }
+      header p { font-size: 1.2rem; opacity: 0.85; margin-top: 12px; }
+      .badge { display: inline-block; background: rgba(255,255,255,0.2); border-radius: 99px; padding: 6px 18px; font-size: 0.85rem; margin-top: 16px; backdrop-filter: blur(10px); }
+      nav { background: #111127; border-bottom: 1px solid #2a2a4a; padding: 0 20px; display: flex; justify-content: center; gap: 32px; }
+      nav a { color: #a5b4fc; text-decoration: none; padding: 16px 0; font-weight: 600; font-size: 0.9rem; border-bottom: 2px solid transparent; transition: all 0.2s; }
+      nav a:hover { color: #6366f1; border-bottom-color: #6366f1; }
+      .container { max-width: 1100px; margin: 0 auto; padding: 60px 20px; }
+      h2 { font-size: 2rem; font-weight: 800; margin-bottom: 8px; }
+      .section-sub { color: #888; margin-bottom: 40px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px; margin-bottom: 60px; }
+      .card { background: #111127; border: 1px solid #2a2a4a; border-radius: 16px; padding: 28px; transition: transform 0.2s, border-color 0.2s; }
+      .card:hover { transform: translateY(-4px); border-color: #6366f1; }
+      .card-icon { font-size: 2.5rem; margin-bottom: 16px; }
+      .card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 8px; }
+      .card p { color: #888; font-size: 0.9rem; line-height: 1.6; }
+      .tag { display: inline-block; background: #6366f122; color: #a5b4fc; border-radius: 6px; padding: 3px 10px; font-size: 0.75rem; margin: 4px 4px 0 0; font-weight: 600; }
+      .skills { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 60px; }
+      .skill { background: #111127; border: 1px solid #2a2a4a; border-radius: 12px; padding: 16px 24px; text-align: center; flex: 1; min-width: 120px; }
+      .skill .pct { font-size: 1.5rem; font-weight: 800; color: #6366f1; }
+      .skill .name { font-size: 0.8rem; color: #888; margin-top: 4px; }
+      .hero-cta { display: inline-flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; justify-content: center; }
+      .btn { padding: 12px 28px; border-radius: 12px; font-weight: 700; text-decoration: none; font-size: 0.9rem; transition: opacity 0.2s; }
+      .btn-primary { background: rgba(255,255,255,0.15); color: #fff; border: 2px solid rgba(255,255,255,0.3); backdrop-filter: blur(10px); }
+      .btn-primary:hover { opacity: 0.8; }
+      .contact-form { background: #111127; border: 1px solid #2a2a4a; border-radius: 16px; padding: 40px; max-width: 600px; }
+      .contact-form input, .contact-form textarea { width: 100%; background: #0a0a1a; border: 1px solid #2a2a4a; border-radius: 10px; padding: 14px 16px; color: #fff; font-size: 0.95rem; margin-bottom: 16px; outline: none; font-family: inherit; transition: border-color 0.2s; }
+      .contact-form input:focus, .contact-form textarea:focus { border-color: #6366f1; }
+      .contact-form textarea { min-height: 120px; resize: vertical; }
+      .contact-form button { background: #6366f1; color: #fff; border: none; padding: 14px 32px; border-radius: 10px; font-weight: 700; font-size: 1rem; cursor: pointer; width: 100%; transition: opacity 0.2s; }
+      .contact-form button:hover { opacity: 0.85; }
+      footer { background: #111127; border-top: 1px solid #2a2a4a; text-align: center; padding: 32px 20px; color: #555; font-size: 0.85rem; }
+      footer span { color: #6366f1; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Alex Bera</h1>
+      <p>Full-Stack Developer & Cloud Engineer</p>
+      <div class="badge">🚀 Deployed on BeraPanel 2.0</div>
+      <div class="hero-cta">
+        <a href="#projects" class="btn btn-primary">View Projects</a>
+        <a href="#contact" class="btn btn-primary">Get In Touch</a>
+      </div>
+    </header>
+
+    <nav>
+      <a href="#about">About</a>
+      <a href="#projects">Projects</a>
+      <a href="#skills">Skills</a>
+      <a href="#contact">Contact</a>
+    </nav>
+
+    <div class="container">
+      <section id="about">
+        <h2>About Me</h2>
+        <p class="section-sub">Building the cloud, one deploy at a time</p>
+        <div class="card" style="max-width:700px">
+          <p style="line-height:1.8;color:#ccc">
+            I'm a passionate full-stack developer with 5+ years of experience building scalable web applications and cloud infrastructure. 
+            I specialize in Node.js, React, and DevOps — helping teams ship faster with confidence. 
+            This portfolio is hosted on <strong style="color:#a5b4fc">BeraPanel 2.0</strong>, my self-hosted PaaS platform.
+          </p>
+        </div>
+      </section>
+
+      <br><br>
+
+      <section id="projects">
+        <h2>Projects</h2>
+        <p class="section-sub">Things I've built recently</p>
+        <div class="grid">
+          <div class="card">
+            <div class="card-icon">🌐</div>
+            <h3>BeraPanel 2.0</h3>
+            <p>Self-hosted PaaS platform with bot marketplace, coin economy, team collaboration, and GitHub-based deployments.</p>
+            <div style="margin-top:12px"><span class="tag">Node.js</span><span class="tag">React</span><span class="tag">PostgreSQL</span></div>
+          </div>
+          <div class="card">
+            <div class="card-icon">🤖</div>
+            <h3>ATASSA MD Bot</h3>
+            <p>Premium WhatsApp multi-device bot with AI assistant, media downloader, group management, and games.</p>
+            <div style="margin-top:12px"><span class="tag">WhatsApp</span><span class="tag">Baileys</span><span class="tag">AI</span></div>
+          </div>
+          <div class="card">
+            <div class="card-icon">💰</div>
+            <h3>Crypto Price Bot</h3>
+            <p>Real-time Telegram bot for crypto prices, portfolio tracking, and market alerts for 500+ coins.</p>
+            <div style="margin-top:12px"><span class="tag">Telegram</span><span class="tag">CoinGecko</span><span class="tag">Node.js</span></div>
+          </div>
+          <div class="card">
+            <div class="card-icon">🔌</div>
+            <h3>Flask REST API</h3>
+            <p>Production-ready Python API with JWT auth, rate limiting, PostgreSQL, Redis, and Swagger docs.</p>
+            <div style="margin-top:12px"><span class="tag">Python</span><span class="tag">Flask</span><span class="tag">Redis</span></div>
+          </div>
+          <div class="card">
+            <div class="card-icon">📱</div>
+            <h3>Cloud Dashboard</h3>
+            <p>Real-time infrastructure monitoring dashboard with alerts, metrics, and one-click scaling.</p>
+            <div style="margin-top:12px"><span class="tag">React</span><span class="tag">WebSockets</span><span class="tag">Chart.js</span></div>
+          </div>
+          <div class="card">
+            <div class="card-icon">🎮</div>
+            <h3>Discord Game Bot</h3>
+            <p>Feature-rich Discord bot with RPG game, economy system, leaderboards, and slash commands.</p>
+            <div style="margin-top:12px"><span class="tag">Discord.js</span><span class="tag">SQLite</span><span class="tag">Games</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="skills">
+        <h2>Skills</h2>
+        <p class="section-sub">Technologies I work with</p>
+        <div class="skills">
+          <div class="skill"><div class="pct">95%</div><div class="name">JavaScript</div></div>
+          <div class="skill"><div class="pct">90%</div><div class="name">Node.js</div></div>
+          <div class="skill"><div class="pct">88%</div><div class="name">React</div></div>
+          <div class="skill"><div class="pct">85%</div><div class="name">TypeScript</div></div>
+          <div class="skill"><div class="pct">82%</div><div class="name">PostgreSQL</div></div>
+          <div class="skill"><div class="pct">80%</div><div class="name">Python</div></div>
+          <div class="skill"><div class="pct">78%</div><div class="name">Docker</div></div>
+          <div class="skill"><div class="pct">75%</div><div class="name">Linux/DevOps</div></div>
+        </div>
+      </section>
+
+      <section id="contact">
+        <h2>Contact</h2>
+        <p class="section-sub">Let's work together</p>
+        <div class="contact-form">
+          <input type="text" placeholder="Your Name" />
+          <input type="email" placeholder="Your Email" />
+          <textarea placeholder="Your message..."></textarea>
+          <button onclick="alert('Message sent! (Demo)'); return false;">Send Message</button>
+        </div>
+      </section>
+    </div>
+
+    <footer>
+      <p>Built with ❤️ and deployed on <span>BeraPanel 2.0</span> · 2026</p>
+    </footer>
+
+    <script>
+      // Smooth scroll
+      document.querySelectorAll('a[href^="#"]').forEach(a => {
+        a.addEventListener('click', e => {
+          e.preventDefault();
+          document.querySelector(a.getAttribute('href'))?.scrollIntoView({ behavior: 'smooth' });
+        });
+      });
+    </script>
+  </body>
+  </html>
