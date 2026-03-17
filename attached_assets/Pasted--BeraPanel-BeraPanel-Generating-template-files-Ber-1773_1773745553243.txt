@@ -1,0 +1,174 @@
+[BeraPanel] ════════════════════════════════════════
+[BeraPanel] Generating template files...
+[BeraPanel] ════════════════════════════════════════
+[BeraPanel] Writing template files for template: ddc2f71b-1e27-4e06-a3c2-28168ac7a405
+[BeraPanel] ✅ Template files generated
+[BeraPanel] Runtime: node
+[BeraPanel] Install: npm install
+[BeraPanel] Start:   node bot.js
+[BeraPanel] ── Installing dependencies ──
+[BeraPanel] $ npm install
+
+added 41 packages, and audited 42 packages in 10s
+
+7 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+[BeraPanel] Starting: node bot.js
+[BeraPanel] ════════════════════════════════════════
+[BeraPanel] ✅ DEPLOY SUCCESSFUL in 10s
+[BeraPanel] 🌐 Live URL: https://bruce-panel-1.replit.app/app/3659d211-54f5-4695-a9ad-62d52a0ef4b7/
+[BeraPanel] ════════════════════════════════════════
+📈 Crypto Price Bot started!
+/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315
+            throw new error_1.default(data, { method, payload });
+                  ^
+
+TelegramError: 404: Not Found
+    at Telegram.callApi (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Telegraf.launch (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/telegraf.js:188:78) {
+  response: { ok: false, error_code: 404, description: 'Not Found' },
+  on: { method: 'getMe', payload: {} }
+}
+
+Node.js v24.13.0
+[BeraPanel] Process exited with code 1
+[BeraPanel] Auto-restarting in 3s... (attempt 1/5)
+[BeraPanel] Starting: node bot.js
+📈 Crypto Price Bot started!
+/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315
+            throw new error_1.default(data, { method, payload });
+                  ^
+
+TelegramError: 404: Not Found
+    at Telegram.callApi (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Telegraf.launch (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/telegraf.js:188:78) {
+  response: { ok: false, error_code: 404, description: 'Not Found' },
+  on: { method: 'getMe', payload: {} }
+}
+
+Node.js v24.13.0
+[BeraPanel] Process exited with code 1
+[BeraPanel] Auto-restarting in 3s... (attempt 2/5)
+[BeraPanel] Starting: node bot.js
+📈 Crypto Price Bot started!
+/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315
+            throw new error_1.default(data, { method, payload });
+                  ^
+
+TelegramError: 404: Not Found
+    at Telegram.callApi (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Telegraf.launch (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/telegraf.js:188:78) {
+  response: { ok: false, error_code: 404, description: 'Not Found' },
+  on: { method: 'getMe', payload: {} }
+}
+
+Node.js v24.13.0
+[BeraPanel] Process exited with code 1
+[BeraPanel] Auto-restarting in 3s... (attempt 3/5)
+[BeraPanel] Starting: node bot.js
+📈 Crypto Price Bot started!
+/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315
+            throw new error_1.default(data, { method, payload });
+                  ^
+
+TelegramError: 404: Not Found
+    at Telegram.callApi (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Telegraf.launch (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/telegraf.js:188:78) {
+  response: { ok: false, error_code: 404, description: 'Not Found' },
+  on: { method: 'getMe', payload: {} }
+}
+
+Node.js v24.13.0
+[BeraPanel] Process exited with code 1
+[BeraPanel] Auto-restarting in 3s... (attempt 4/5)
+[BeraPanel] Starting: node bot.js
+[BeraPanel] Starting: node bot.js
+[BeraPanel] Process exited with code null
+📈 Crypto Price Bot started!
+[BeraPanel] Auto-restarting in 3s... (attempt 4/5)
+📈 Crypto Price Bot started!
+/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315
+            throw new error_1.default(data, { method, payload });
+                  ^
+
+TelegramError: 404: Not Found
+    at Telegram.callApi (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Telegraf.launch (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/telegraf.js:188:78) {
+  response: { ok: false, error_code: 404, description: 'Not Found' },
+  on: { method: 'getMe', payload: {} }
+}
+
+Node.js v24.13.0
+/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315
+            throw new error_1.default(data, { method, payload });
+                  ^
+
+TelegramError: 404: Not Found
+    at Telegram.callApi (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Telegraf.launch (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/telegraf.js:188:78) {
+  response: { ok: false, error_code: 404, description: 'Not Found' },
+  on: { method: 'getMe', payload: {} }
+}
+
+Node.js v24.13.0
+[BeraPanel] Process exited with code 1
+[BeraPanel] Auto-restarting in 3s... (attempt 5/5)
+[BeraPanel] Starting: node bot.js
+📈 Crypto Price Bot started!
+/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315
+            throw new error_1.default(data, { method, payload });
+                  ^
+
+TelegramError: 404: Not Found
+    at Telegram.callApi (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Telegraf.launch (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/telegraf.js:188:78) {
+  response: { ok: false, error_code: 404, description: 'Not Found' },
+  on: { method: 'getMe', payload: {} }
+}
+
+Node.js v24.13.0
+[BeraPanel] Process exited with code 1
+[BeraPanel] Auto-restarting in 3s... (attempt 5/5)
+[BeraPanel] Starting: node bot.js
+[BeraPanel] Starting: node bot.js
+[BeraPanel] Process exited with code null
+[BeraPanel] Too many crashes — stopping auto-restart. Please redeploy.
+📈 Crypto Price Bot started!
+📈 Crypto Price Bot started!
+/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315
+            throw new error_1.default(data, { method, payload });
+                  ^
+
+TelegramError: 404: Not Found
+    at Telegram.callApi (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Telegraf.launch (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/telegraf.js:188:78) {
+  response: { ok: false, error_code: 404, description: 'Not Found' },
+  on: { method: 'getMe', payload: {} }
+}
+
+Node.js v24.13.0
+/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315
+            throw new error_1.default(data, { method, payload });
+                  ^
+
+TelegramError: 404: Not Found
+    at Telegram.callApi (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/core/network/client.js:315:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Telegraf.launch (/home/runner/workspace/artifacts/api-server/bp_projects/3659d211-54f5-4695-a9ad-62d52a0ef4b7/node_modules/telegraf/lib/telegraf.js:188:78) {
+  response: { ok: false, error_code: 404, description: 'Not Found' },
+  on: { method: 'getMe', payload: {} }
+}
+
+Node.js v24.13.0
+[BeraPanel] Process exited with code 1
+[BeraPanel] Too many crashes — stopping auto-restart. Please redeploy.
