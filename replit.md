@@ -1,8 +1,8 @@
-# Workspace
+# BeraPanel 2.0
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+BeraPanel is a cloud hosting PaaS platform built as a pnpm workspace monorepo. It lets users deploy bots, APIs, and web apps, manage them with a dashboard, earn coins, and use a marketplace.
 
 ## Stack
 
@@ -12,85 +12,95 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **TypeScript version**: 5.9
 - **API framework**: Express 5
 - **Database**: PostgreSQL + Drizzle ORM
+- **Frontend**: React + Vite + TailwindCSS + React Query
+- **Auth**: JWT tokens
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+- **Payments**: PayHero M-Pesa STK Push (optional)
+- **Notifications**: Telegram bot (optional)
+- **Process Manager**: Node.js child_process spawn
+- **Code Editor**: Monaco Editor
+- **Terminal**: xterm.js
 
 ## Structure
 
 ```text
 artifacts-monorepo/
 ├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
+│   ├── api-server/         # Express API server (port 8080)
+│   └── berapanel/          # React frontend (port 5173)
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
 │   ├── api-zod/            # Generated Zod schemas from OpenAPI
 │   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
+├── scripts/                # Utility scripts
+├── pnpm-workspace.yaml     # pnpm workspace config
+├── tsconfig.base.json      # Shared TS options
 ├── tsconfig.json           # Root TS project references
-└── package.json            # Root package with hoisted devDeps
+└── package.json            # Root package
 ```
 
-## TypeScript & Composite Projects
+## Admin Credentials
 
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references. This means:
+- **Username:** `bera`
+- **Password:** `brucebera7824_`
+- **Role:** superadmin
 
-- **Always typecheck from the root** — run `pnpm run typecheck` (which runs `tsc --build --emitDeclarationOnly`). This builds the full dependency graph so that cross-package imports resolve correctly. Running `tsc` inside a single package will fail if its dependencies haven't been built yet.
-- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck; actual JS bundling is handled by esbuild/tsx/vite...etc, not `tsc`.
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array. `tsc --build` uses this to determine build order and skip up-to-date packages.
+## API Routes
 
-## Root Scripts
+All API routes are under `/api/brucepanel/`:
 
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
-- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
+- `/api/brucepanel/auth/` - Authentication (login, register, refresh token)
+- `/api/brucepanel/projects/` - Project management (CRUD, deploy, logs)
+- `/api/brucepanel/coins/` - Coin economy (balance, transfer, history)
+- `/api/brucepanel/bots/` - Marketplace bot templates
+- `/api/brucepanel/airdrops/` - Airdrop claiming
+- `/api/brucepanel/account/` - User profile, API keys
+- `/api/brucepanel/admin/` - Admin panel (requires admin role)
+- `/api/brucepanel/chat/` - Community chat channels
+- `/api/brucepanel/support/` - Support tickets
 
-## Packages
+## Environment Variables
 
-### `artifacts/api-server` (`@workspace/api-server`)
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `DATABASE_URL` | PostgreSQL connection string | Yes (auto-set by Replit) |
+| `JWT_SECRET` | JWT signing secret | Yes |
+| `PAYHERO_AUTH` | PayHero Basic auth header | No |
+| `PAYHERO_CHANNEL_ID` | PayHero channel ID | No |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot for admin alerts | No |
+| `TELEGRAM_ADMIN_CHAT_ID` | Telegram admin chat ID | No |
+| `BASE_URL` | Public base URL | No |
 
-Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
+## Development
 
-- Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
+```bash
+# Install dependencies
+pnpm install
 
-### `lib/db` (`@workspace/db`)
+# Push database schema
+pnpm --filter @workspace/db run push
 
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
+# Seed initial data (admin, coin packages, bots, promo)
+cd artifacts/api-server && npx tsx src/seed.ts
 
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
+# Start backend
+pnpm --filter @workspace/api-server run dev
 
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
+# Start frontend
+pnpm --filter @workspace/berapanel run dev
+```
 
-### `lib/api-spec` (`@workspace/api-spec`)
+## Promo Code
 
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
+Use promo code **BERA2026** for 100 free coins on signup!
 
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
+## Key Fixes Applied
 
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
-
-### `lib/api-zod` (`@workspace/api-zod`)
-
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
-
-### `lib/api-client-react` (`@workspace/api-client-react`)
-
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
-
-### `scripts` (`@workspace/scripts`)
-
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+1. Added missing DB tables: `projectWebhooksTable`, `teamMembersTable`, `featureFlagsTable`, `chatChannelsTable`, `chatMessagesTable`
+2. Fixed `api-zod` index.ts to export values (Zod schemas) not just types
+3. Added chat router to routes index
+4. Fixed chat route import path
+5. Fixed live URL generation to use Replit proxy path (`/app/:projectId`)
+6. Set `autoRestart` default to `false` (was `true`)
+7. Fixed process manager to generate correct live URLs for Replit environment
