@@ -934,6 +934,9 @@ export async function deployFromGit(
 
     await db.update(deployHistoryTable).set({ status: "success", buildLog, durationSeconds: duration }).where(eq(deployHistoryTable.id, deployId));
 
+    // Release the deploy lock BEFORE starting the process — startProcess checks this lock
+    deployingProjects.delete(project.id);
+
     // Start the process
     await startProcess({ ...project, startCommand, port, autoRestart: project.autoRestart, envVars: project.envVars });
 
@@ -943,7 +946,6 @@ export async function deployFromGit(
     log(`[BeraPanel] 🌐 Live URL: ${liveUrl}\n`);
     log(`[BeraPanel] ════════════════════════════════════════\n`);
 
-    deployingProjects.delete(project.id); // Release deploy lock before starting
     return liveUrl;
   } catch (err: any) {
     deployingProjects.delete(project.id); // Release deploy lock on failure too
