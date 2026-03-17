@@ -136,7 +136,8 @@ router.post("/subscribe/initiate", requireAuth, async (req, res): Promise<void> 
   const payheroAuth = process.env.PAYHERO_AUTH;
   const channelId = process.env.PAYHERO_CHANNEL_ID || "3763";
   const baseUrl = process.env.PAYHERO_BASE || "https://backend.payhero.co.ke/api/v2";
-  const callbackUrl = `${process.env.BASE_URL || "https://bruce-panel-1.replit.app"}/api/brucepanel/subscribe/callback`;
+  // Always use production URL for PayHero callbacks — dev domain is ephemeral and may not be reachable
+  const callbackUrl = `${process.env.PAYHERO_CALLBACK_BASE || "https://bruce-panel-1.replit.app"}/api/brucepanel/subscribe/callback`;
 
   if (!payheroAuth) {
     // Demo mode (no PayHero credentials configured)
@@ -146,6 +147,8 @@ router.post("/subscribe/initiate", requireAuth, async (req, res): Promise<void> 
     res.json({ checkoutRequestId: tx.id, transactionId: tx.id, message: "Payment processed (demo mode)" });
     return;
   }
+
+  console.log(`[PayHero] Initiating STK: phone=${normalizedPhone}, amount=${pkg.priceKsh}, channel=${channelId}, callback=${callbackUrl}`);
 
   try {
     const stkRes = await fetch(`${baseUrl}/payments`, {
@@ -195,21 +198,61 @@ router.get("/subscribe/status/:checkoutRequestId", requireAuth, async (req, res)
 
 // POST /subscribe/callback (PayHero webhook)
 router.post("/subscribe/callback", async (req, res): Promise<void> => {
-  try {
-    const body = req.body;
-    const ref = body?.external_reference || body?.ExternalReference;
-    const status = body?.Status || body?.status;
+  const body = req.body;
+  console.log("[PayHero] Callback received:", JSON.stringify(body));
 
-    if (ref && status === "SUCCESS") {
-      const [tx] = await db.select().from(transactionsTable).where(eq(transactionsTable.id, ref)).limit(1);
+  try {
+    // PayHero sends: external_reference = our transaction ID, Status = SUCCESS/FAILED
+    const ref = body?.external_reference || body?.ExternalReference || body?.reference;
+    const rawStatus = (body?.Status || body?.status || "").toUpperCase();
+    const resultCode = body?.ResultCode ?? body?.result_code;
+    const amount = body?.Amount || body?.amount;
+
+    console.log(`[PayHero] ref=${ref}, status=${rawStatus}, resultCode=${resultCode}, amount=${amount}`);
+
+    if (!ref) {
+      console.warn("[PayHero] Callback missing external_reference — ignoring");
+      res.json({ status: "ok" });
+      return;
+    }
+
+    if (rawStatus === "SUCCESS") {
+      // Find by transaction ID (external_reference we sent)
+      let tx: any = null;
+      const byId = await db.select().from(transactionsTable).where(eq(transactionsTable.id, ref)).limit(1);
+      tx = byId[0];
+
+      // Also try matching by checkoutRequestId in case PayHero sends it differently
+      if (!tx) {
+        const byCheckout = await db.select().from(transactionsTable).where(eq(transactionsTable.checkoutRequestId, ref)).limit(1);
+        tx = byCheckout[0];
+      }
+
       if (tx && tx.status === "pending") {
         const coins = tx.coins || 0;
-        await awardCoins(tx.userId, coins, "purchase", `M-Pesa payment completed: ${coins} coins`);
-        await db.update(transactionsTable).set({ status: "completed" }).where(eq(transactionsTable.id, ref));
-        await createNotification(tx.userId, "Payment Successful!", `Your ${coins} coins have been credited.`, "success", "billing");
+        await awardCoins(tx.userId, coins, "purchase", `M-Pesa payment completed: KSh${amount || tx.amountKsh} → ${coins} coins`);
+        await db.update(transactionsTable).set({ status: "completed" }).where(eq(transactionsTable.id, tx.id));
+        await createNotification(tx.userId, "Payment Successful!", `Your M-Pesa payment was received. ${coins} coins credited!`, "success", "billing");
+        console.log(`[PayHero] ✅ Transaction ${tx.id} completed — ${coins} coins awarded to user ${tx.userId}`);
+      } else if (tx) {
+        console.log(`[PayHero] Transaction ${tx.id} already in status: ${tx.status} — skipping`);
+      } else {
+        console.warn(`[PayHero] No transaction found for ref: ${ref}`);
       }
+    } else if (rawStatus === "FAILED" || rawStatus === "CANCELLED") {
+      const byId = await db.select().from(transactionsTable).where(eq(transactionsTable.id, ref)).limit(1);
+      const tx = byId[0];
+      if (tx && tx.status === "pending") {
+        await db.update(transactionsTable).set({ status: "failed" }).where(eq(transactionsTable.id, tx.id));
+        await createNotification(tx.userId, "Payment Failed", `Your M-Pesa payment was ${rawStatus.toLowerCase()}. Please try again.`, "error", "billing");
+        console.log(`[PayHero] ❌ Transaction ${tx.id} marked as failed`);
+      }
+    } else {
+      console.log(`[PayHero] Unhandled callback status: ${rawStatus} — body:`, JSON.stringify(body));
     }
-  } catch {}
+  } catch (err: any) {
+    console.error("[PayHero] Callback processing error:", err.message);
+  }
   res.json({ status: "ok" });
 });
 
