@@ -3,6 +3,7 @@ import { fileURLToPath } from "url";
 import { build as esbuild } from "esbuild";
 import { rm, readFile, cp } from "fs/promises";
 import { existsSync } from "fs";
+import { execSync } from "child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,6 +43,14 @@ const allowlist = [
 async function buildAll() {
   const distDir = path.resolve(__dirname, "dist");
   await rm(distDir, { recursive: true, force: true });
+
+  // Build the berapanel frontend first (so it can be copied into dist/public)
+  const workspaceRoot = path.resolve(__dirname, "../..");
+  console.log("building frontend (berapanel)...");
+  execSync("pnpm --filter @workspace/berapanel run build", {
+    cwd: workspaceRoot,
+    stdio: "inherit",
+  });
 
   console.log("building server...");
   const pkgPath = path.resolve(__dirname, "package.json");
