@@ -1,0 +1,12 @@
+{
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "pnpm install && pnpm run build"
+  },
+  "deploy": {
+    "startCommand": "cd artifacts/berapanel && pnpm run serve",
+    "healthcheckPath": "/",
+    "healthcheckTimeout": 100,
+    "restartPolicyType": "ON_FAILURE"
+  }
+}
