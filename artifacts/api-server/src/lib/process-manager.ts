@@ -654,13 +654,26 @@ export function detectRuntime(dir: string): {
   // Node.js
   if (has("package.json")) {
     const pkg = read("package.json");
-    const start = pkg?.scripts?.start || pkg?.scripts?.["start:prod"] || null;
+    const rawStart = pkg?.scripts?.start || pkg?.scripts?.["start:prod"] || null;
     const build = pkg?.scripts?.build || null;
     const isNextJs = !!pkg?.dependencies?.next || !!pkg?.devDependencies?.next;
     const isVite = !!pkg?.dependencies?.vite || !!pkg?.devDependencies?.vite;
     const usesPM = has("pnpm-lock.yaml") ? "pnpm" : has("yarn.lock") ? "yarn" : "npm";
     let installCmd = `${usesPM} install`;
-    let startCmd = start || (isNextJs ? "node .next/standalone/server.js" : "node index.js");
+
+    // Replace process managers (pm2, forever, nodemon) with direct node invocation
+    // pm2/forever/nodemon are not installed in the BeraPanel runtime environment
+    let startCmd = rawStart;
+    if (startCmd && /^(pm2|forever|nodemon)\s/.test(startCmd)) {
+      // Extract the target script from the pm2/forever/nodemon command
+      // e.g. "pm2 start index.js --name foo" → "node index.js"
+      // e.g. "nodemon server.js" → "node server.js"
+      const scriptMatch = startCmd.match(/(?:pm2\s+start|forever\s+start|nodemon)\s+([^\s]+\.(?:js|cjs|mjs|ts))/);
+      const mainFile = scriptMatch?.[1] || pkg?.main || "index.js";
+      startCmd = `node ${mainFile}`;
+    }
+
+    startCmd = startCmd || (isNextJs ? "node .next/standalone/server.js" : `node ${pkg?.main || "index.js"}`);
     let buildCmd = build || (isNextJs ? `${usesPM} run build` : null);
     return { runtime: "node", installCommand: installCmd, startCommand: startCmd, buildCommand: buildCmd };
   }
@@ -878,22 +891,20 @@ export async function deployFromGit(
       throw new Error("No repository URL or template ID provided — cannot deploy.");
     }
 
-    // Auto-detect runtime and commands after clone if not explicitly set or if default
+    // Auto-detect runtime and commands after clone/extract
     const detected = detectRuntime(dir);
     let installCommand = project.installCommand || detected.installCommand;
     let startCommand = project.startCommand;
     let buildCommand = project.buildCommand;
 
-    // If start command is still the generic default, try to get from package.json
-    if (startCommand === "node index.js" && detected.runtime === "node") {
-      const pkgStart = detectStartCommand(dir);
-      if (pkgStart) {
-        startCommand = pkgStart;
-        log(`[BeraPanel] Auto-detected start command from package.json: ${startCommand}\n`);
-      }
+    // If start command is the generic default, upgrade it using detectRuntime's sanitized result
+    // (detectRuntime already strips pm2/forever/nodemon → node)
+    if (startCommand === "node index.js" && detected.runtime === "node" && detected.startCommand !== "node index.js") {
+      startCommand = detected.startCommand;
+      log(`[BeraPanel] Auto-detected start command: ${startCommand}\n`);
     }
 
-    // If runtime mismatch, use detected values
+    // If runtime mismatch, use all detected values
     if (project.runtime !== detected.runtime && project.runtime === "node" && detected.runtime !== "node") {
       installCommand = detected.installCommand;
       startCommand = detected.startCommand;
