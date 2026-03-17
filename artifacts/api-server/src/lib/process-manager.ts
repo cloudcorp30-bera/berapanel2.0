@@ -105,9 +105,6 @@ function generateTemplateFiles(dir: string, templateId: string, envVars: Record<
   const write = (name: string, content: string) =>
     fs.writeFileSync(path.join(dir, name), content, "utf8");
 
-  const mkd = (sub: string) =>
-    fs.mkdirSync(path.join(dir, sub), { recursive: true });
-
   // ── Telegram Bot Starter ────────────────────────────────────────────────────
   if (templateId === "f7d17257-853d-456e-88ff-d275c81e575a") {
     write("package.json", JSON.stringify({
@@ -741,7 +738,7 @@ export function isRunning(projectId: string): boolean {
 }
 
 export async function deployFromGit(
-  project: { id: string; repoUrl: string | null; branch: string; installCommand: string; startCommand: string; buildCommand: string | null; envVars: Record<string, string> | null; port: number | null; autoRestart: boolean; runtime?: string },
+  project: { id: string; repoUrl: string | null; branch: string; installCommand: string; startCommand: string; buildCommand: string | null; envVars: Record<string, string> | null; port: number | null; autoRestart: boolean; runtime?: string; templateId?: string | null },
   userId?: string
 ): Promise<string> {
   const dir = path.join(PROJECTS_DIR, project.id);
@@ -767,9 +764,15 @@ export async function deployFromGit(
 
   try {
     const repoUrl = project.repoUrl || "";
+    const hasRepo = repoUrl.trim().length > 0;
+
     log(`[BeraPanel] ════════════════════════════════════════\n`);
-    log(`[BeraPanel] Deploying from: ${repoUrl}\n`);
-    log(`[BeraPanel] Branch: ${project.branch}\n`);
+    if (hasRepo) {
+      log(`[BeraPanel] Deploying from: ${repoUrl}\n`);
+      log(`[BeraPanel] Branch: ${project.branch}\n`);
+    } else {
+      log(`[BeraPanel] Generating template files...\n`);
+    }
     log(`[BeraPanel] ════════════════════════════════════════\n`);
 
     const runCmd = (cmd: string): Promise<void> => {
@@ -782,19 +785,34 @@ export async function deployFromGit(
       });
     };
 
-    // Clone / pull — handle all directory states robustly
-    if (fs.existsSync(path.join(dir, ".git"))) {
-      // Has git history — clean reset to avoid local changes blocking pull
-      await runCmd(`git fetch origin && git reset --hard origin/${project.branch}`);
-    } else {
-      // No .git folder — clear any stale files from a previous failed clone, then clone fresh
+    // Clone / pull — or generate from built-in template when no repoUrl
+    if (!hasRepo && project.templateId) {
+      // No repo URL — generate bot files from built-in template
       const existing = fs.readdirSync(dir);
       if (existing.length > 0) {
-        log(`[BeraPanel] Clearing stale directory (${existing.length} items) for fresh clone...\n`);
         fs.rmSync(dir, { recursive: true, force: true });
         fs.mkdirSync(dir, { recursive: true });
       }
-      await runCmd(`git clone --depth 1 --branch ${project.branch} ${repoUrl} .`);
+      log(`[BeraPanel] Writing template files for template: ${project.templateId}\n`);
+      generateTemplateFiles(dir, project.templateId, project.envVars || {});
+      log(`[BeraPanel] ✅ Template files generated\n`);
+    } else if (hasRepo) {
+      // Clone / pull — handle all directory states robustly
+      if (fs.existsSync(path.join(dir, ".git"))) {
+        // Has git history — clean reset to avoid local changes blocking pull
+        await runCmd(`git fetch origin && git reset --hard origin/${project.branch}`);
+      } else {
+        // No .git folder — clear any stale files from a previous failed clone, then clone fresh
+        const existing = fs.readdirSync(dir);
+        if (existing.length > 0) {
+          log(`[BeraPanel] Clearing stale directory (${existing.length} items) for fresh clone...\n`);
+          fs.rmSync(dir, { recursive: true, force: true });
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        await runCmd(`git clone --depth 1 --branch ${project.branch} ${repoUrl} .`);
+      }
+    } else {
+      throw new Error("No repository URL or template ID provided — cannot deploy.");
     }
 
     // Auto-detect runtime and commands after clone if not explicitly set or if default

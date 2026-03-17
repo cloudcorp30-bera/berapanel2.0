@@ -22,6 +22,7 @@ export const projectsTable = pgTable("projects", {
   customDomain: text("custom_domain"),
   customDomainVerified: boolean("custom_domain_verified").default(false).notNull(),
   deploySource: text("deploy_source").default("github").notNull(),
+  botTemplateId: uuid("bot_template_id"),
   zipFilename: text("zip_filename"),
   webhookSecret: text("webhook_secret"),
   healthCheckUrl: text("health_check_url"),

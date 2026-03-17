@@ -8,10 +8,9 @@ import {
 } from "@workspace/db";
 import { eq, desc, sql } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
-import { spendCoins } from "../lib/coins.js";
-import { getProjectDir, getLiveUrl } from "../lib/process-manager.js";
-import fs from "fs";
-import path from "path";
+import { spendCoins, awardCoins } from "../lib/coins.js";
+import { getLiveUrl, deployFromGit } from "../lib/process-manager.js";
+import { createNotification } from "../lib/notify.js";
 
 const router: IRouter = Router();
 
@@ -101,60 +100,47 @@ router.post("/bots/:id/deploy", requireAuth, async (req, res): Promise<void> => 
     runtime: bot.runtime,
     envVars: userEnv,
     deploySource: "bot_template",
-  }).returning();
+    botTemplateId: id,
+  } as any).returning();
 
-  const projectDir = getProjectDir(project.id);
-  fs.mkdirSync(projectDir, { recursive: true });
-
-  // Check for a local zip file for this bot (slugified name)
-  // In production: cwd = workspace root, server binary is at artifacts/api-server/dist/
-  // In dev: cwd = artifacts/api-server/
-  const botSlug = bot.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-  const candidates = [
-    path.join(process.cwd(), "artifacts/api-server/bot_zips", `${botSlug}.zip`),
-    path.join(process.cwd(), "bot_zips", `${botSlug}.zip`),
-  ];
-  const zipPath = candidates.find(p => fs.existsSync(p)) || candidates[0];
-
-  if (fs.existsSync(zipPath)) {
-    // Extract zip directly to project dir (auto-deploy from local zip)
-    try {
-      const { default: AdmZip } = await import("adm-zip");
-      const zip = new AdmZip(zipPath);
-      const entries = zip.getEntries();
-
-      // Find the root folder prefix (e.g. "atassa-main/")
-      const prefix = entries.find(e => e.isDirectory)?.entryName || "";
-
-      for (const entry of entries) {
-        if (entry.isDirectory) continue;
-        const relativePath = prefix ? entry.entryName.replace(prefix, "") : entry.entryName;
-        if (!relativePath) continue;
-        const destPath = path.join(projectDir, relativePath);
-        fs.mkdirSync(path.dirname(destPath), { recursive: true });
-        fs.writeFileSync(destPath, entry.getData());
-      }
-
-      // Write the .env file with user-provided vars
-      const envContent = Object.entries(userEnv).map(([k, v]) => `${k}=${v}`).join("\n");
-      fs.writeFileSync(path.join(projectDir, ".env"), envContent);
-
-      // Mark as "cloned" so deploy just runs install + start
-      await db.update(projectsTable).set({ status: "idle" }).where(eq(projectsTable.id, project.id));
-    } catch (err: any) {
-      console.error("Zip extraction failed:", err.message);
-    }
-  }
-
-  // Increment deploy count
-  await db.update(botTemplatesTable).set({ deployCount: (bot.deployCount || 0) + 1 }).where(eq(botTemplatesTable.id, id));
-
+  // Respond immediately so the frontend can redirect to the project page
   res.status(201).json({
     ...project,
     liveUrl: getLiveUrl(project.id),
     envVars: userEnv,
     tags: project.tags || [],
     coinCostPerHour: Number(project.coinCostPerHour),
+  });
+
+  // Auto-trigger deployment in the background (user can watch logs on project page)
+  setImmediate(async () => {
+    try {
+      await db.update(botTemplatesTable)
+        .set({ deployCount: (bot.deployCount || 0) + 1 })
+        .where(eq(botTemplatesTable.id, id));
+
+      const liveUrl = await deployFromGit({
+        ...project,
+        repoUrl: bot.repoUrl || null,
+        branch: bot.branch,
+        startCommand: bot.startCommand || "node index.js",
+        installCommand: bot.installCommand,
+        buildCommand: null,
+        envVars: userEnv,
+        port: null,
+        autoRestart: true,
+        runtime: bot.runtime,
+        templateId: id,
+      }, req.user!.id);
+
+      if (project.deployCount === 0) {
+        await awardCoins(req.user!.id, 100, "earn", "First project deployment!");
+      }
+      await createNotification(req.user!.id, "Bot Deployed! 🚀", `${bot.name} is live at ${liveUrl}`, "success", "deploy");
+    } catch (err: any) {
+      console.error(`[marketplace] Deploy failed for ${project.id}:`, err.message);
+      await createNotification(req.user!.id, "Deploy Failed", `${bot.name}: ${err.message}`, "error", "deploy");
+    }
   });
 });
 

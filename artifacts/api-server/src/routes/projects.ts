@@ -179,7 +179,7 @@ router.post("/projects/:id/deploy", requireAuth, async (req, res): Promise<void>
   const port = project.port || 3001 + Math.floor(Math.random() * 900);
 
   try {
-    const liveUrl = await deployFromGit({ ...project, repoUrl, branch, port, envVars: project.envVars as Record<string, string> }, req.user!.id);
+    const liveUrl = await deployFromGit({ ...project, repoUrl, branch, port, envVars: project.envVars as Record<string, string>, templateId: (project as any).botTemplateId || null }, req.user!.id);
 
     // Award first deploy coins if first time
     if (project.deployCount === 0) {
