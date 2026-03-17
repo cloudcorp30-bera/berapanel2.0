@@ -6,6 +6,14 @@ import { createProxyMiddleware, responseInterceptor } from "http-proxy-middlewar
 import { db } from "@workspace/db";
 import { projectsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import path from "path";
+import fs from "fs";
+
+// __dirname is natively available when built as CJS by esbuild;
+// in dev (tsx/ESM) we fall back to process.cwd()-based resolution.
+const _distDir: string = typeof __dirname !== "undefined"
+  ? __dirname
+  : path.join(process.cwd(), "artifacts/api-server/dist");
 
 const app: Express = express();
 
@@ -77,6 +85,26 @@ app.use("/app/:projectId", async (req, res, next) => {
     res.status(500).json({ error: "Proxy error" });
   }
 });
+
+// Serve built frontend in production
+if (process.env.NODE_ENV === "production") {
+  const publicDir = path.join(_distDir, "public");
+  if (fs.existsSync(publicDir)) {
+    app.use(express.static(publicDir));
+    // SPA fallback - serve index.html for all non-API/non-app routes
+    app.get("/*splat", (req, res, next) => {
+      if (req.path.startsWith("/api") || req.path.startsWith("/app")) {
+        return next();
+      }
+      const indexPath = path.join(publicDir, "index.html");
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        next();
+      }
+    });
+  }
+}
 
 // 404 handler
 app.use((req, res) => {
