@@ -1,7 +1,8 @@
 import path from "path";
 import { fileURLToPath } from "url";
 import { build as esbuild } from "esbuild";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, cp } from "fs/promises";
+import { existsSync } from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,6 +21,7 @@ const allowlist = [
   "express",
   "express-rate-limit",
   "express-session",
+  "http-proxy-middleware",
   "jsonwebtoken",
   "memorystore",
   "multer",
@@ -67,6 +69,17 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  // Copy built frontend into dist/public so the API server can serve it
+  const frontendDist = path.resolve(__dirname, "../berapanel/dist/public");
+  const publicOut = path.resolve(distDir, "public");
+  if (existsSync(frontendDist)) {
+    console.log("copying frontend build to dist/public...");
+    await cp(frontendDist, publicOut, { recursive: true });
+    console.log("frontend copied.");
+  } else {
+    console.warn("WARNING: berapanel dist not found - build berapanel first");
+  }
 }
 
 buildAll().catch((err) => {
