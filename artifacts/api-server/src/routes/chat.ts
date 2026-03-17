@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { chatChannelsTable, chatMessagesTable, usersTable } from "@workspace/db/schema";
+import { chatChannelsTable, chatMessagesTable, usersTable } from "@workspace/db";
 import { eq, desc, asc } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
 
