@@ -167,7 +167,10 @@ export async function deployFromGit(
     await runCmd(project.installCommand);
     if (project.buildCommand) await runCmd(project.buildCommand);
 
-    const liveUrl = `${process.env.BASE_URL || "http://localhost"}:${port}`;
+    const replitDomain = process.env.REPLIT_DOMAINS?.split(",")[0];
+    const liveUrl = replitDomain
+      ? `https://${replitDomain}/app/${project.id}`
+      : `${process.env.BASE_URL || "http://localhost"}:${port}`;
     const duration = Math.floor((Date.now() - startTime) / 1000);
 
     await db.update(projectsTable).set({
