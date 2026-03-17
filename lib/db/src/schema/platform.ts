@@ -164,3 +164,35 @@ export const customDomainsTable = pgTable("custom_domains", {
   verifiedAt: timestamp("verified_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const featureFlagsTable = pgTable("feature_flags", {
+  key: text("key").primaryKey(),
+  label: text("label"),
+  description: text("description"),
+  enabled: boolean("enabled").default(false).notNull(),
+  updatedBy: uuid("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const chatChannelsTable = pgTable("chat_channels", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  slug: text("slug").unique().notNull(),
+  description: text("description"),
+  icon: text("icon"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type ChatChannel = typeof chatChannelsTable.$inferSelect;
+
+export const chatMessagesTable = pgTable("chat_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  channelId: uuid("channel_id").references(() => chatChannelsTable.id, { onDelete: "cascade" }).notNull(),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  content: text("content").notNull(),
+  replyToId: uuid("reply_to_id"),
+  edited: boolean("edited").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type ChatMessage = typeof chatMessagesTable.$inferSelect;
