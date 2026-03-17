@@ -53,3 +53,6 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Deployed project files (user bots, session data — never commit)
+**/bp_projects/
