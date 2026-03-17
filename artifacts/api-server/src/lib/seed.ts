@@ -341,6 +341,26 @@ export async function runSeed(): Promise<void> {
       `);
     }
     console.log(`[seed] Synced ${DEFAULT_COIN_PACKAGES.length} coin packages`);
+
+    // Disable any bot templates that are NOT in our canonical list (cleanup duplicates/old entries)
+    const knownIds = DEFAULT_BOT_TEMPLATES.map((b) => b.id);
+    const knownIdList = knownIds.map((id) => `'${id}'`).join(", ");
+    await db.execute(sql.raw(
+      `UPDATE bot_templates SET enabled = false WHERE id NOT IN (${knownIdList})`
+    ));
+
+    // Transfer deploy_count from disabled bots to ATASSA MD so ranking is preserved
+    await db.execute(sql`
+      UPDATE bot_templates
+      SET deploy_count = deploy_count + (
+        SELECT COALESCE(SUM(deploy_count), 0)
+        FROM bot_templates
+        WHERE id NOT IN (${sql.raw(knownIdList)}) AND deploy_count > 0
+      )
+      WHERE id = 'd3c85798-3884-4a20-980f-74d9f32a4eb3'::uuid
+    `);
+    console.log("[seed] Cleaned up old/duplicate bot templates");
+
   } catch (err) {
     console.error("[seed] Error during seed:", err);
   }
