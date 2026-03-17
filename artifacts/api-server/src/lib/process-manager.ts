@@ -744,6 +744,16 @@ export async function startProcess(project: { id: string; startCommand: string; 
 
   stopProcess(project.id);
 
+  // Wait for old process to release its port before spawning the new one
+  await new Promise<void>(resolve => setTimeout(resolve, 2000));
+
+  // Also release port using fuser in case there's a zombie process holding it
+  try {
+    const { execSync } = await import("child_process");
+    execSync(`fuser -k ${project.port}/tcp 2>/dev/null || true`, { stdio: "ignore" });
+    await new Promise<void>(resolve => setTimeout(resolve, 500));
+  } catch { /* ignore */ }
+
   const env: Record<string, string> = {
     ...process.env as Record<string, string>,
     ...(project.envVars || {}),
